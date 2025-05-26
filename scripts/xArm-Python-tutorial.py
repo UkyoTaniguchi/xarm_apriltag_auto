@@ -92,18 +92,25 @@ def test_pose():
     xarm.set_pose_target(target_pose)
     xarm.go()
 
+def apriltag_towoard_pose(x,y,z):
+    target_pose = geometry_msgs.msg.Pose()
+    target_pose.position.x = x
+    target_pose.position.y = y
+    target_pose.position.z = z
+    target_pose.orientation.x = -0.9999072837831338
+    target_pose.orientation.y = -4.859141964351074e-05
+    target_pose.orientation.z = 0.013613290340705797
+    target_pose.orientation.w = 0.00031591519361944936
+
+    xarm.set_pose_target(target_pose)
+    xarm.go()
+
 """
 課題にある動作を実現する関数を作ってみよう.
 なお、必ずGazeboシミュレーション上で動作を確認してから実機でチェックを行うこと.
 moveitの関数の使い方の説明等は以下のURLを見れば分かります.
 URL:https://robo-marc.github.io/moveit_documents/moveit_commander.html
 
-課題：
-(1) キーボード入力で好きな位置へ移動させる.(rpyは今回やりません. orientationの4つのパラメータはイジらないように)
-(2) boxを邪魔な位置に生成してみた上で(1)の位置に動作させてみよう.
-(3) 円軌道を描いてみせよ(それなりに早く)
-(4)(※別のプログラム) URDFファイルを編集し、ペンアタッチメントをエンドエフェクタとして付けてみる
-(5) ペンを付けて自分のイニシャル文字を書いてみる.
 
 gazeboでシミュレーションする方法:
 ターミナル
@@ -128,6 +135,7 @@ if __name__ == '__main__':
         print("q:終了")
         print("t:テストポーズ")
         print("h:ホームポジションに戻る")
+        print("a:apriltag認識ポーズ")
         mode = input("mode select>>")
         print("You select mode : %s " % mode)
 
@@ -142,6 +150,12 @@ if __name__ == '__main__':
 
         elif mode=="h":
             Go_homeposition()
+
+        elif mode == "a":
+            x = float(input("x方向を入力"))
+            y = float(input("y方向を入力"))
+            z = float(input("z方向を入力"))
+            apriltag_towoard_pose(x, y, z)
 
         else:
             print("there isn't such mode")
