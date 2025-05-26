@@ -1,0 +1,20 @@
+<launch>
+  <arg name="robot_ip" default="192.168.1.195" />
+  <arg name="add_realsense_d435i" default="true" />
+
+  <!-- ロボットとRealSenseの起動 -->
+  <include file="$(find xarm6_gripper_moveit_config)/launch/realMove_exec.launch">
+    <arg name="robot_ip" value="$(arg robot_ip)" />
+    <arg name="add_realsense_d435i" value="$(arg add_realsense_d435i)" />
+  </include>
+
+  <!-- RealSense TF broadcaster ノードの追加 -->
+  <node name="camera_to_xarm6eef_broadcaster"
+        pkg="xarm_apriltag_demo"
+        type="camera_to_xarm6eef_broadcaster.py"
+        output="screen"
+        cwd="node" />
+
+  <!-- RViz起動（任意） -->
+  <!-- <node pkg="rviz" type="rviz" name="rviz" output="screen" /> -->
+</launch>
