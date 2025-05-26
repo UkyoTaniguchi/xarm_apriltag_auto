@@ -2,9 +2,10 @@
 import moveit_commander
 import rospy
 import os
-# import tf
+import tf
 import geometry_msgs.msg
-
+import math
+from tf.transformations import quaternion_from_euler
 
 # moveit library
 robot = moveit_commander.RobotCommander()
@@ -52,8 +53,8 @@ def ArmInitialization():
     print("=" * 10, " Printing Xarm initial rpy: ")
     print(xarm_initial_rpy)
 
-    xarm.set_max_velocity_scaling_factor(0.5)
-    xarm.set_max_acceleration_scaling_factor(0.5)
+    xarm.set_max_velocity_scaling_factor(0.2)
+    xarm.set_max_acceleration_scaling_factor(0.2)
 
 
 def Go_homeposition():
@@ -66,7 +67,8 @@ def Go_homeposition():
     home_pose.orientation.z = 0.013613290340705797
     home_pose.orientation.w = 0.00031591519361944936
 
-    xarm.set_max_velocity_scaling_factor(0.6)
+    xarm.set_max_velocity_scaling_factor(0.2)
+    xarm.set_max_acceleration_scaling_factor(0.2)
     xarm.set_pose_target(home_pose)
     xarm.go()
 
@@ -89,19 +91,32 @@ def test_pose():
     target_pose.orientation.z = 0.013613290340705797
     target_pose.orientation.w = 0.00031591519361944936
     
+    xarm.set_max_velocity_scaling_factor(0.2)
+    xarm.set_max_acceleration_scaling_factor(0.2)
     xarm.set_pose_target(target_pose)
     xarm.go()
 
-def apriltag_towoard_pose(x,y,z):
+def apriltag_towoard_pose():
+    q = quaternion_from_euler(0, math.pi/2, 0)  # x方向を向く
+    
     target_pose = geometry_msgs.msg.Pose()
-    target_pose.position.x = x
-    target_pose.position.y = y
-    target_pose.position.z = z
-    target_pose.orientation.x = -0.9999072837831338
-    target_pose.orientation.y = -4.859141964351074e-05
-    target_pose.orientation.z = 0.013613290340705797
-    target_pose.orientation.w = 0.00031591519361944936
+    # target_pose.position.x = x
+    # target_pose.position.y = y
+    # target_pose.position.z = z
+    # target_pose.orientation.x = q[0]
+    # target_pose.orientation.y = q[1]
+    # target_pose.orientation.z = q[2]
+    # target_pose.orientation.w = q[3]
+    target_pose.position.x = 0.8462385436134898
+    target_pose.position.y = 0.11094014777770038
+    target_pose.position.z = 0.3361595531386302
+    target_pose.orientation.x = 0.7178595194441207
+    target_pose.orientation.y = -0.0007155137903498503
+    target_pose.orientation.z = 0.6961876143794062
+    target_pose.orientation.w = 6.299351872424036e-05
 
+    xarm.set_max_velocity_scaling_factor(0.2)
+    xarm.set_max_acceleration_scaling_factor(0.2)
     xarm.set_pose_target(target_pose)
     xarm.go()
 
@@ -152,10 +167,10 @@ if __name__ == '__main__':
             Go_homeposition()
 
         elif mode == "a":
-            x = float(input("x方向を入力"))
-            y = float(input("y方向を入力"))
-            z = float(input("z方向を入力"))
-            apriltag_towoard_pose(x, y, z)
+            # x = float(input("x方向を入力"))
+            # y = float(input("y方向を入力"))
+            # z = float(input("z方向を入力"))
+            apriltag_towoard_pose()
 
         else:
             print("there isn't such mode")
