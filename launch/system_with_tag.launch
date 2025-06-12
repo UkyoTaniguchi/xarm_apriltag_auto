@@ -1,12 +1,22 @@
 <launch>
-  <!-- RealSense 起動 -->
+  <!-- 引数の定義 -->
+  <arg name="camera" default="cam_1" />
+  <arg name="serial_no" default="819312073416" />
+  <arg name="enable_pointcloud" default="true" />
+
+  <!-- RealSense 起動（引数を渡す） -->
   <include file="$(find realsense2_camera)/launch/rs_camera.launch">
-    <arg name="enable_pointcloud" value="true" />
+    <arg name="camera" value="$(arg camera)" />
+    <arg name="serial_no" value="$(arg serial_no)" />
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
   </include>
 
   <!-- xArm + RealSense + RViz -->
   <include file="$(find xarm_apriltag_demo)/launch/view_robot_with_realsense.launch" />
 
   <!-- AprilTag 認識ノード -->
-  <include file="$(find apriltag_ros)/launch/continuous_detection.launch" />
+  <include file="$(find apriltag_ros)/launch/continuous_detection.launch">
+    <arg name="camera_name" value="/$(arg camera)/color" />
+    <arg name="image_topic" value="image_raw" />
+</include>
 </launch>

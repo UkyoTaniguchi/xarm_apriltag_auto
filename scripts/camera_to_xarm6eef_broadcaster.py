@@ -14,7 +14,7 @@ def broadcast_transform():
         br.sendTransform((0.0673, 0.0, 0.0),  # 平行移動 (x, y, z)
                          tf.transformations.quaternion_from_euler(0, -1.57, 3.14),  # 回転 (roll, pitch, yaw)
                          rospy.Time.now(),
-                         "camera_link",  # RealSenseのカメラフレーム名
+                         "cam_1_link",  # RealSenseのカメラフレーム名
                          "link_eef"  # ロボットのエンドエフェクタフレーム名
                          )
         rate.sleep()
