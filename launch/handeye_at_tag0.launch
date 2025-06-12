@@ -1,0 +1,19 @@
+<launch>
+  <!-- 引数の定義 -->
+  <arg name="camera" default="cam_2" />
+  <arg name="serial_no" default="344322074094" />
+  <arg name="enable_pointcloud" default="true" />
+
+  <!-- RealSense 起動（引数を渡す） -->
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="$(arg camera)" />
+    <arg name="serial_no" value="$(arg serial_no)" />
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
+  </include>
+
+  <!-- tag_0 に camera_link を固定で設置する静的TFブロードキャスト -->
+  <node pkg="xarm_apriltag_demo"
+        type="handeye_to_tag0_broadcast.py"
+        name="static_camera_tf"
+        output="screen" />
+</launch>
