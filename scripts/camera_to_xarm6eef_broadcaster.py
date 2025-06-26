@@ -11,7 +11,7 @@ def broadcast_transform():
 
     while not rospy.is_shutdown():
         # カメラの位置と向きを設定（実際の設置に合わせて調整する）
-        br.sendTransform((0.0673, 0.0, 0.0),  # 平行移動 (x, y, z)
+        br.sendTransform((0.06746, -0.0175, 0.0237),  # 平行移動 (x, y, z)
                          tf.transformations.quaternion_from_euler(0, -1.57, 3.14),  # 回転 (roll, pitch, yaw)
                          rospy.Time.now(),
                          "cam_1_link",  # RealSenseのカメラフレーム名
