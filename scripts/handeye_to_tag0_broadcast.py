@@ -35,13 +35,32 @@ def broadcast_transform():
     # 移動後の位置
     final_translation = translation + offset_global
 
+    # cam_1_color_optical_frame の world からの位置・姿勢（クォータニオン）
+    T_w_c1_pos = np.array([0.7011397474192116, 0.1434457767138928, 0.39845546874782145])
+    T_w_c1_quat = [-0.5186274359877653, 0.5049423237374071, -0.49123082288991715, 0.4845111598688641]
+
+    # cam_2_link ← cam_1_color_optical_frame の変換
+    T_c1_c2_pos = final_translation
+    T_c1_c2_quat = corrected_quat
+
+    # 回転の合成（クォータニオン積）
+    T_w_c2_quat = tft.quaternion_multiply(T_w_c1_quat, T_c1_c2_quat)
+
+    # 平行移動の変換：cam_1→cam_2 のベクトルを world の回転で変換
+    R_w_c1 = tft.quaternion_matrix(T_w_c1_quat)[:3, :3]
+    T_c2_offset_world = R_w_c1 @ T_c1_c2_pos
+
+    # 最終的な平行移動（world→cam_2）
+    T_w_c2_pos = T_w_c1_pos + T_c2_offset_world
+
+
     while not rospy.is_shutdown():
         br.sendTransform(
-            final_translation,
-            corrected_quat,
+            T_w_c2_pos,
+            T_w_c2_quat,
             rospy.Time.now(),
             "cam_2_link",
-            "cam_1_color_optical_frame"
+            "world"
         )
         rate.sleep()
 
