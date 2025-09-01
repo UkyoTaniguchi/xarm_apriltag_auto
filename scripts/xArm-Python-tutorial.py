@@ -83,13 +83,13 @@ def armpose_checker():
 
 def test_pose():
     target_pose = geometry_msgs.msg.Pose()
-    target_pose.position.x = 0.300
-    target_pose.position.y = 0.400
-    target_pose.position.z = 0.200
-    target_pose.orientation.x = -0.9999072837831338
-    target_pose.orientation.y = -4.859141964351074e-05
-    target_pose.orientation.z = 0.013613290340705797
-    target_pose.orientation.w = 0.00031591519361944936
+    target_pose.position.x = 0.6285301118155925
+    target_pose.position.y = 0.023024458429832043
+    target_pose.position.z = -0.007847691724208204
+    target_pose.orientation.x = 0.7993477521473659
+    target_pose.orientation.y = 0.041820261245556066
+    target_pose.orientation.z = 0.5993573583225176
+    target_pose.orientation.w = 0.00806188011324577
     
     xarm.set_max_velocity_scaling_factor(0.2)
     xarm.set_max_acceleration_scaling_factor(0.2)
