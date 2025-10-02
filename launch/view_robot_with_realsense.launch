@@ -8,6 +8,18 @@
     <arg name="add_realsense_d435i" value="$(arg add_realsense_d435i)" />
   </include>
 
+  <!-- link_eef -> link_eef_fixed を rpy(度)＋xyz(m)で補正配信するノード -->
+  <node pkg="xarm_apriltag_demo" type="eef_to_eef_fixed_broadcaster.py" name="eef_correction_broadcaster" output="screen">
+    <param name="parent_frame" value="link_eef"/>
+    <param name="child_frame"  value="link_eef_fixed"/>
+    <rosparam param="xyz">[0.0, 0.0, 0.0]</rosparam>         <!-- YAML配列 -->
+    <rosparam param="rpy_deg">[0.0, 0.0, 3.000916]</rosparam> 
+    <param name="rate"    value="30"/>
+  </node>
+
+  <!-- <node pkg="tf" type="static_transform_publisher" name="eef_correction_rpy"
+      args="0 0 0  0.0349066 0 0  link_eef link_eef_fixed 100" /> -->
+
   <!-- RealSense TF broadcaster ノードの追加 -->
   <node name="camera_to_xarm6eef_broadcaster"
         pkg="xarm_apriltag_demo"
