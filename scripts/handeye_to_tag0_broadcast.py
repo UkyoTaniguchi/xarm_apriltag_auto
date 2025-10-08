@@ -10,7 +10,8 @@ import numpy as np
 import re
 import os
 
-TAG_FILE_DEFAULT = "/home/ukyo/catkin_ws/src/xarm_apriltag_demo/public/tag_pose.txt"
+# デフォルトのタグファイルパス
+TAG_FILE_DEFAULT = "src/3_utils/xarm_apriltag_auto/public/tag_pose.txt"
 
 _pos_re = re.compile(r"Position:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+)")
 _ori_re = re.compile(r"Orientation:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+),\s*w=([-\d\.eE]+)")
