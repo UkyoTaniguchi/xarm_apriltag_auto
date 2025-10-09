@@ -12,11 +12,4 @@
         <param name="tag_file" value="$(arg tag_file)" />
         <param name="tag_ids" value="$(arg tag_ids)" />
     </node>
-    <!-- タグの位置からカメラの位置を推定するノードの起動 -->
-    <!-- <node pkg="xarm_apriltag_demo"
-            type="estimate_camera_pose.py"
-            name="estimate_camera_pose"
-            output="screen">
-        <param name="tag_file" value="$(arg tag_file)" />
-    </node> -->
 </launch>   
