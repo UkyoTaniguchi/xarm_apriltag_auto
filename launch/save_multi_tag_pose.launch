@@ -2,7 +2,7 @@
 <launch>
     <!-- 引数の定義 -->
     <arg name="tag_file" default="$(find xarm_apriltag_demo)/config/tag_pose.yaml" />
-    <arg name="tag_ids" default="0,1" />  <!-- 保存したいタグIDのリスト（カンマ区切り） -->
+    <arg name="tag_ids" default="0,1,2" />  <!-- 保存したいタグIDのリスト（カンマ区切り） -->
     
     <!-- タグ位置保存ノードの起動 -->
     <node pkg="xarm_apriltag_demo"
