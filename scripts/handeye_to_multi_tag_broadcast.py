@@ -102,7 +102,7 @@ def compute_transform(tag_file, tag_id):
     offsets = {
         0: np.array([0.0042, 0.0175, -0.0525]),
         1: np.array([0.0042, 0.0175, -0.0525]),
-        2: np.array([-0.01, -0.05, 0]),
+        2: np.array([0.0042, 0.0175, -0.0525]),
     }
     local_offset = offsets.get(tag_id, np.zeros(3))
 
