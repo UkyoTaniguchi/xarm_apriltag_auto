@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+import rospy
+import tf2_ros
+from apriltag_ros.msg import AprilTagDetectionArray
+from geometry_msgs.msg import TransformStamped
+import math
+
+tag_pose_dict = {}
+tf_buffer = None
+listener = None
+
+# --- 浮動小数比較の許容誤差 ---
+EPS = 1e-4
+
+def is_pose_changed(old_pose, new_pose):
+    """位置・姿勢が有意に変化しているか判定"""
+    for a, b in zip(old_pose, new_pose):
+        if abs(a - b) > EPS:
+            return True
+    return False
+
+def save_tag_and_camera_pose(detections_msg):
+    global tag_pose_dict, tf_buffer
+    if len(detections_msg.detections) == 0:
+        return
+
+    updated = False
+    tag_info_lines = []
+
+    for detection in detections_msg.detections:
+        tag_id = detection.id[0]
+        pose = detection.pose.pose.pose
+        p = pose.position
+        q = pose.orientation
+        new_tag_pose = (p.x, p.y, p.z, q.x, q.y, q.z, q.w)
+
+        # --- カメラ座標取得 ---
+        try:
+            transform: TransformStamped = tf_buffer.lookup_transform(
+                target_frame='world',
+                source_frame='cam_1_color_optical_frame',
+                time=rospy.Time(0),
+                timeout=rospy.Duration(2.0)
+            )
+            t = transform.transform.translation
+            r = transform.transform.rotation
+            new_cam_pose = (t.x, t.y, t.z, r.x, r.y, r.z, r.w)
+        except Exception as e:
+            rospy.logwarn(f"Transform not found for Tag ID {tag_id}: {e}")
+            continue
+
+        # --- 新規または変化があったときのみ更新 ---
+        if tag_id not in tag_pose_dict:
+            rospy.loginfo(f"New Tag ID {tag_id} detected, saving.")
+            tag_pose_dict[tag_id] = {
+                "tag_pose": new_tag_pose,
+                "camera_pose": new_cam_pose,
+            }
+            updated = True
+        else:
+            old_tag_pose = tag_pose_dict[tag_id]["tag_pose"]
+            old_cam_pose = tag_pose_dict[tag_id]["camera_pose"]
+            if is_pose_changed(old_tag_pose, new_tag_pose) or is_pose_changed(old_cam_pose, new_cam_pose):
+                # rospy.loginfo(f"Tag ID {tag_id} pose changed, updating.")
+                tag_pose_dict[tag_id]["tag_pose"] = new_tag_pose
+                tag_pose_dict[tag_id]["camera_pose"] = new_cam_pose
+                updated = True
+            else:
+                # rospy.loginfo(f"Tag ID {tag_id} unchanged, skipping update.")
+                continue
+
+    # --- 変化なしなら保存しない ---
+    if not updated:
+        return
+
+    # --- ファイル出力 ---
+    for tag_id, data in tag_pose_dict.items():
+        px, py, pz, qx, qy, qz, qw = data["tag_pose"]
+        cx, cy, cz, rx, ry, rz, rw = data["camera_pose"]
+
+        tag_info_lines.append(f"Tag ID: {tag_id}")
+        tag_info_lines.append(f"Position: x={px}, y={py}, z={pz}")
+        tag_info_lines.append(f"Orientation: x={qx}, y={qy}, z={qz}, w={qw}")
+        tag_info_lines.append("")
+        tag_info_lines.append(f"cam_1_color_optical_frame (Tag {tag_id}) w.r.t world:")
+        tag_info_lines.append(f"Position: x={cx}, y={cy}, z={cz}")
+        tag_info_lines.append(f"Orientation: x={rx}, y={ry}, z={rz}, w={rw}")
+        tag_info_lines.append("")
+
+    save_path = "src/3_utils/xarm_apriltag_auto/public/tag_pose.txt"
+    with open(save_path, "w") as f:
+        f.write("\n".join(tag_info_lines))
+
+    # rospy.loginfo(f"Pose information updated. Total tags: {len(tag_pose_dict)}")
+
+def listener():
+    global tf_buffer, listener
+    rospy.init_node('apriltag_listener', anonymous=True)
+    tf_buffer = tf2_ros.Buffer()
+    listener = tf2_ros.TransformListener(tf_buffer)
+    rospy.Subscriber('/tag_detections', AprilTagDetectionArray, save_tag_and_camera_pose)
+    rospy.spin()
+
+if __name__ == '__main__':
+    listener()
