@@ -32,7 +32,7 @@ def _pick_first_match(lines, start_idx):
                 break
     return pos, ori
 
-def load_from_tag_pose_file(path, wanted_tag_id=0):
+def load_from_tag_pose_file(path, wanted_tag_id=1):
     """
     tag_pose.txt から
       1) 指定 Tag ID の Position/Orientation
@@ -87,7 +87,7 @@ def broadcast_transform():
 
     # パラメータ（必要なら rosparam で上書き可能）
     tag_file = rospy.get_param("~tag_file", TAG_FILE_DEFAULT)
-    tag_id   = rospy.get_param("~tag_id", 0)
+    tag_id   = rospy.get_param("~tag_id", 1)
 
     # --- 1) ファイルから数値を取り込む ---
     translation, raw_quat, T_w_c1_pos, T_w_c1_quat = load_from_tag_pose_file(tag_file, tag_id)
@@ -103,7 +103,7 @@ def broadcast_transform():
     # 最終姿勢 = もとの姿勢 × 補正姿勢
     corrected_quat = tft.quaternion_multiply(raw_quat, q_correction)
 
-    local_offset = np.array([0.0042, 0.0175, -0.0525])  # cam_2_link基準の平行移動
+    local_offset = np.array([0.0042, 0.0175, -0.0525])  # cam_3_link基準の平行移動
 
     # corrected_quat の回転行列でオフセットを変換
     rot_matrix = tft.quaternion_matrix(corrected_quat)[:3, :3]
@@ -112,30 +112,30 @@ def broadcast_transform():
     # 移動後の位置（型を合わせる）
     final_translation = np.array(translation) + offset_global
 
-    # cam_2_link ← cam_1_color_optical_frame の変換
-    T_c1_c2_pos  = final_translation
-    T_c1_c2_quat = corrected_quat
+    # cam_3_link ← cam_1_color_optical_frame の変換
+    T_c1_c3_pos  = final_translation
+    T_c1_c3_quat = corrected_quat
 
     # 回転の合成（クォータニオン積）
-    T_w_c2_quat = tft.quaternion_multiply(T_w_c1_quat, T_c1_c2_quat)
+    T_w_c3_quat = tft.quaternion_multiply(T_w_c1_quat, T_c1_c3_quat)
 
-    # 平行移動の変換：cam_1→cam_2 のベクトルを world の回転で変換
+    # 平行移動の変換：cam_1→cam_3 のベクトルを world の回転で変換
     R_w_c1 = tft.quaternion_matrix(T_w_c1_quat)[:3, :3]
-    T_c2_offset_world = R_w_c1 @ T_c1_c2_pos
+    T_c3_offset_world = R_w_c1 @ T_c1_c3_pos
 
-    # 最終的な平行移動（world→cam_2）
-    T_w_c2_pos = T_w_c1_pos + T_c2_offset_world
+    # 最終的な平行移動（world→cam_3）
+    T_w_c3_pos = T_w_c1_pos + T_c3_offset_world
 
     rospy.loginfo(f"[OK] Loaded from {tag_file} (Tag ID: {tag_id})")
-    rospy.loginfo(f"T_w_c2_pos = {T_w_c2_pos}")
-    rospy.loginfo(f"T_w_c2_quat = {T_w_c2_quat}")
+    rospy.loginfo(f"T_w_c3_pos = {T_w_c3_pos}")
+    rospy.loginfo(f"T_w_c3_quat = {T_w_c3_quat}")
 
     while not rospy.is_shutdown():
         br.sendTransform(
-            T_w_c2_pos,
-            T_w_c2_quat,
+            T_w_c3_pos,
+            T_w_c3_quat,
             rospy.Time.now(),
-            "cam_2_link",
+            "cam_3_link",
             "world"
         )
         rate.sleep()

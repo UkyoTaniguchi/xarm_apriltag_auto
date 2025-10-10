@@ -1,33 +1,35 @@
 <!-- 複数カメラの起動・それぞれのTF配信 -->
-
 <launch>
   <!-- 引数 -->
   <arg name="enable_pointcloud" default="true" />
 
   <!-- ===== 固定camera2の起動 ===== -->
-  <group ns="cam_2">
-    <arg name="serial_no_2" default="344322074094" />
-    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
-      <arg name="camera" value="cam_2" />
-      <arg name="serial_no" value="$(arg serial_no_2)" />
-      <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
-    </include>
-  </group>
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="cam_2" />
+    <arg name="serial_no" value="344322074094" />
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
+  </include>
 
   <!-- ===== 固定camera3の起動 ===== -->
-  <group ns="cam_3">
-    <arg name="serial_no_3" default="337122071608" />  <!-- ← 実際のシリアル番号に置き換える -->
-    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
-      <arg name="camera" value="cam_3" />
-      <arg name="serial_no" value="$(arg serial_no_3)" />
-      <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
-    </include>
-  </group>
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="cam_3" />
+    <arg name="serial_no" value="337122071608" />
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
+  </include>
+
+  <!-- ===== 固定camera4の起動 ===== -->
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="cam_4" />
+    <arg name="serial_no" value="243122070422" />
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
+  </include>
 
   <!-- ===== 静的TFノード ===== -->
-  <!-- <node pkg="xarm_apriltag_demo"
-        type="handeye_to_tag0_broadcast.py"
-        name="static_camera_tf"
-        output="screen" /> -->
+  <node pkg="xarm_apriltag_demo"
+        type="handeye_to_multi_tag_broadcast.py"
+        name="static_cameras_tf"
+        output="screen">
+    <!-- YAML形式で配列を指定 -->
+    <rosparam param="tag_ids">[0, 1, 2]</rosparam>
+  </node>
 </launch>
-
