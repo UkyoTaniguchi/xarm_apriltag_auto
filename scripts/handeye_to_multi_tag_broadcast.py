@@ -17,76 +17,94 @@ _ori_re = re.compile(r"Orientation:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\
 # 「(Tag N)」の有無を両方許容
 _cam1_hdr_re = re.compile(r"^cam_1_color_optical_frame(?:\s*\(Tag\s*(\d+)\))?\s*w\.r\.t\s*world:")
 
-def _pick_first_match(lines, start_idx):
-    pos = ori = None
-    for i in range(start_idx, len(lines)):
-        if pos is None:
-            m = _pos_re.search(lines[i])
-            if m:
-                pos = tuple(float(m.group(k)) for k in (1, 2, 3))
+# 位置・姿勢の変化を検出するための閾値
+def _pick_first_match(text_lines, start_index):
+    # Position/Orientation の最初のマッチを探す
+    position = orientation = None
+    # 各行を順にチェック
+    for line_index in range(start_index, len(text_lines)):
+        # position 未取得なら探す
+        if position is None:
+            position_match = _pos_re.search(text_lines[line_index])
+            if position_match:
+                position = tuple(float(position_match.group(group_id)) for group_id in (1, 2, 3))
                 continue
-        if pos is not None and ori is None:
-            m = _ori_re.search(lines[i])
-            if m:
-                ori = tuple(float(m.group(k)) for k in (1, 2, 3, 4))
+        if position is not None and orientation is None:
+            orientation_match = _ori_re.search(text_lines[line_index])
+            if orientation_match:
+                orientation = tuple(float(orientation_match.group(group_id)) for group_id in (1, 2, 3, 4))
                 break
-    return pos, ori
+    return position, orientation
 
-def _normalize_quat(q):
-    q = np.asarray(q, dtype=float)
-    n = np.linalg.norm(q)
-    if not np.isfinite(n) or n < 1e-8:
+def _normalize_quaternion(quaternion):
+    """クォータニオンを正規化"""
+    quaternion_array = np.asarray(quaternion, dtype=float)
+    norm_value = np.linalg.norm(quaternion_array)
+    if not np.isfinite(norm_value) or norm_value < 1e-8:
         raise ValueError("Invalid quaternion (norm ~ 0 or NaN)")
-    return tuple((q / n).tolist())
+    return tuple((quaternion_array / norm_value).tolist())
 
-def _assert_finite(name, arr):
-    a = np.asarray(arr, dtype=float)
-    if not np.all(np.isfinite(a)):
-        raise ValueError(f"{name} contains non-finite values: {a}")
 
-def load_from_tag_pose_file(path, wanted_tag_id):
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"{path} が見つかりません。")
-    with open(path, "r") as f:
-        lines = [ln.strip() for ln in f.readlines()]
+def _assert_finite_values(array_name, array_values):
+    """NaNやinfが含まれていないか確認"""
+    numeric_array = np.asarray(array_values, dtype=float)
+    if not np.all(np.isfinite(numeric_array)):
+        raise ValueError(f"{array_name} contains non-finite values: {numeric_array}")
 
-    # --- Tag ID ブロック ---
-    tag_idx = None
-    for i, ln in enumerate(lines):
-        if ln.startswith("Tag ID:"):
+
+def load_from_tag_pose_file(file_path, target_tag_id):
+    """tag_pose.txtから指定Tag IDとcam_1の姿勢を読み取る"""
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"{file_path} が見つかりません。")
+
+    with open(file_path, "r") as file:
+        all_lines = [line.strip() for line in file.readlines()]
+
+    # --- Tag ID ブロックを検索 ---
+    tag_line_index = None
+    for line_index, current_line in enumerate(all_lines):
+        if current_line.startswith("Tag ID:"):
             try:
-                tid = int(ln.split(":")[1].strip())
-                if tid == wanted_tag_id:
-                    tag_idx = i
+                tag_id_value = int(current_line.split(":")[1].strip())
+                if tag_id_value == target_tag_id:
+                    tag_line_index = line_index
                     break
             except Exception:
                 pass
-    if tag_idx is None:
-        raise ValueError(f"Tag ID: {wanted_tag_id} の記述が見つかりません。")
+    if tag_line_index is None:
+        raise ValueError(f"Tag ID: {target_tag_id} の記述が見つかりません。")
 
-    translation, raw_quat = _pick_first_match(lines, tag_idx)
-    if translation is None or raw_quat is None:
+    # Tagの位置・姿勢抽出
+    tag_translation, tag_quaternion_raw = _pick_first_match(all_lines, tag_line_index)
+    if tag_translation is None or tag_quaternion_raw is None:
         raise ValueError("Tag の Position/Orientation を解釈できません。")
 
-    # --- cam_1_color_optical_frame ヘッダ（Tag有無どちらも許容）---
-    cam1_idx = None
-    for i, ln in enumerate(lines):
-        m = _cam1_hdr_re.match(ln)
-        if not m:
+    # --- cam_1_color_optical_frame のブロックを検索 ---
+    cam1_line_index = None
+    for line_index, current_line in enumerate(all_lines):
+        cam1_match = _cam1_hdr_re.match(current_line)
+        if not cam1_match:
             continue
-        # m.group(1) が None（= Tag表記なし）の場合は採用
-        # ある場合は wanted_tag_id と一致したときのみ採用
-        if m.group(1) is None or int(m.group(1)) == wanted_tag_id:
-            cam1_idx = i
+        # group(1) が None の場合は無条件採用
+        # group(1) に値があれば target_tag_id と一致したときのみ採用
+        if cam1_match.group(1) is None or int(cam1_match.group(1)) == target_tag_id:
+            cam1_line_index = line_index
             break
-    if cam1_idx is None:
-        raise ValueError(f"'cam_1_color_optical_frame ... w.r.t world:' の行が見つかりません。")
+    if cam1_line_index is None:
+        raise ValueError("'cam_1_color_optical_frame ... w.r.t world:' の行が見つかりません。")
 
-    cam1_pos, cam1_quat = _pick_first_match(lines, cam1_idx)
-    if cam1_pos is None or cam1_quat is None:
+    # cam_1 の位置・姿勢抽出
+    cam1_translation, cam1_quaternion = _pick_first_match(all_lines, cam1_line_index)
+    if cam1_translation is None or cam1_quaternion is None:
         raise ValueError("cam_1 の Position/Orientation を解釈できません。")
 
-    return translation, raw_quat, np.array(cam1_pos), tuple(cam1_quat)
+    return (
+        tag_translation,
+        tag_quaternion_raw,
+        np.array(cam1_translation),
+        tuple(cam1_quaternion),
+    )
+
 
 def compute_transform(tag_file, tag_id):
     translation, raw_quat, T_w_c1_pos, T_w_c1_quat = load_from_tag_pose_file(tag_file, tag_id)
@@ -95,8 +113,8 @@ def compute_transform(tag_file, tag_id):
     q_pitch = tft.quaternion_from_euler(0, math.radians(-90), 0)
     q_roll  = tft.quaternion_from_euler(math.radians(-90), 0, 0)
     q_correction = tft.quaternion_multiply(q_pitch, q_roll)
-    corrected_quat = tft.quaternion_multiply(_normalize_quat(raw_quat), _normalize_quat(q_correction))
-    corrected_quat = _normalize_quat(corrected_quat)
+    corrected_quat = tft.quaternion_multiply(_normalize_quaternion(raw_quat), _normalize_quaternion(q_correction))
+    corrected_quat = _normalize_quaternion(corrected_quat)
 
     # オフセット（必要に応じて個別化）
     offsets = {
@@ -115,16 +133,16 @@ def compute_transform(tag_file, tag_id):
     T_c1_ci_quat = corrected_quat
 
     # world → cam_i
-    T_w_c1_quat = _normalize_quat(T_w_c1_quat)
+    T_w_c1_quat = _normalize_quaternion(T_w_c1_quat)
     T_w_ci_quat = tft.quaternion_multiply(T_w_c1_quat, T_c1_ci_quat)
-    T_w_ci_quat = _normalize_quat(T_w_ci_quat)
+    T_w_ci_quat = _normalize_quaternion(T_w_ci_quat)
 
     R_w_c1 = tft.quaternion_matrix(T_w_c1_quat)[:3, :3]
     T_ci_offset_world = R_w_c1 @ T_c1_ci_pos
     T_w_ci_pos = T_w_c1_pos + T_ci_offset_world
 
-    _assert_finite("T_w_ci_pos", T_w_ci_pos)
-    _assert_finite("T_w_ci_quat", T_w_ci_quat)
+    _assert_finite_values("T_w_ci_pos", T_w_ci_pos)
+    _assert_finite_values("T_w_ci_quat", T_w_ci_quat)
 
     return T_w_ci_pos, T_w_ci_quat
 
