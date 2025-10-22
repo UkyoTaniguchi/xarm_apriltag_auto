@@ -19,7 +19,7 @@ class ImuPlotter:
         self.accel_threshold = 0.1  # m/s²
 
         # ===== 設定 =====
-        self.max_len = 500
+        self.max_len = 1000
         self.update_rate = 30.0  # Hz
         self.last_update = time.time()
 
