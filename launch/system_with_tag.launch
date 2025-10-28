@@ -1,7 +1,7 @@
 <launch>
   <!-- 引数の定義 -->
   <arg name="camera" default="cam_1" />
-  <arg name="serial_no" default="337122071608" />
+  <arg name="serial_no" default="819312073416" />
   <arg name="enable_pointcloud" default="true" />
 
   <!-- RealSense 起動（引数を渡す） -->
