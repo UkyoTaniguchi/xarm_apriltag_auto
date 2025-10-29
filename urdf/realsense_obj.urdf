@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<robot name="realsense_obj">
+  <!-- world 直下に body_link を置く -->
+  <link name="body_link">
+    <visual>
+      <geometry>
+        <mesh filename="package://xarm_apriltag_demo/meshes/realsense-rviz.stl" scale="1 1 1"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <material name="gray">
+        <color rgba="0.7 0.7 0.7 1"/>
+      </material>
+    </visual>
+  </link>
+</robot>
