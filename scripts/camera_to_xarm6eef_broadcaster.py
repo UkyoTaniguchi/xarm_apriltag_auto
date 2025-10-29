@@ -50,6 +50,6 @@ def broadcast_transform2():
 
 if __name__ == '__main__':
     try:
-        broadcast_transform2()
+        broadcast_transform()
     except rospy.ROSInterruptException:
         pass
