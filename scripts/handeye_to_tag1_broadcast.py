@@ -77,6 +77,11 @@ def load_from_tag_pose_file(path, wanted_tag_id=1):
     cam1_pos, cam1_quat = _pick_first_match(lines, cam1_idx)
     if cam1_pos is None or cam1_quat is None:
         raise ValueError("cam_1 の Position/Orientation を解釈できませんでした。")
+    
+    rospy.loginfo("=== [Tag pose loaded] ===")
+    rospy.loginfo(f"Tag ID {wanted_tag_id} @ line {tag_idx}")
+    rospy.loginfo(f"  Position (camera→tag): {translation}")
+    rospy.loginfo(f"  Orientation (camera→tag): {raw_quat}")
 
     return translation, raw_quat, np.array(cam1_pos), tuple(cam1_quat)
 
@@ -103,7 +108,7 @@ def broadcast_transform():
     # 最終姿勢 = もとの姿勢 × 補正姿勢
     corrected_quat = tft.quaternion_multiply(raw_quat, q_correction)
 
-    local_offset = np.array([0.0042, 0.0175, -0.0525])  # cam_3_link基準の平行移動
+    local_offset = np.array([-0.03, 0.0175, -0.0525])  # cam_3_link基準の平行移動
 
     # corrected_quat の回転行列でオフセットを変換
     rot_matrix = tft.quaternion_matrix(corrected_quat)[:3, :3]

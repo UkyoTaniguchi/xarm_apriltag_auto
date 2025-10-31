@@ -103,7 +103,7 @@ def broadcast_transform():
     # 最終姿勢 = もとの姿勢 × 補正姿勢
     corrected_quat = tft.quaternion_multiply(raw_quat, q_correction)
 
-    local_offset = np.array([0.0042, 0.0175, -0.0525])  # cam_2_link基準の平行移動
+    local_offset = np.array([-0.01, 0.0, -0.0525])  # cam_2_link基準の平行移動
 
     # corrected_quat の回転行列でオフセットを変換
     rot_matrix = tft.quaternion_matrix(corrected_quat)[:3, :3]
