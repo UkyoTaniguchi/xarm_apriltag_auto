@@ -1,0 +1,16 @@
+<!-- 自己再キャリブレーション動作を仮想環境で試すlaunchファイル -->
+<launch>
+  <!-- RealSense 実機 -->
+  <group ns="camera">
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+      <arg name="enable_gyro"  value="true"/>
+      <arg name="enable_accel" value="true"/>
+      <arg name="unite_imu_method" value="linear_interpolation"/>
+    </include>
+  </group>
+
+  <!-- MoveIt -->
+  <include file="$(find xarm6_moveit_config)/launch/demo.launch">
+  </include>
+</launch>
+
