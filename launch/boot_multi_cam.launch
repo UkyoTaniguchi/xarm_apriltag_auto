@@ -24,10 +24,10 @@
     <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
   </include>
 
-  <!-- ===== 静的TFノード ===== -->
+  <!-- ===== タグの位置・姿勢を保存するノード ===== -->
   <node pkg="xarm_apriltag_demo"
-        type="handeye_to_multi_tag_broadcast.py"
-        name="static_cameras_tf"
+        type="save_multi_tag_pose.py"
+        name="save_multi_tag_pose"
         output="screen">
     <!-- YAML形式で配列を指定 -->
     <rosparam param="tag_ids">[0, 1, 2]</rosparam>
