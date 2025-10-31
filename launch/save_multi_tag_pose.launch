@@ -1,0 +1,15 @@
+<!-- 複数のタグを検出し、各タグの位置を保存するノードの実行 -->
+<launch>
+    <!-- 引数の定義 -->
+    <arg name="tag_file" default="$(find xarm_apriltag_demo)/config/tag_pose.yaml" />
+    <arg name="tag_ids" default="0,1,2" />  <!-- 保存したいタグIDのリスト（カンマ区切り） -->
+    
+    <!-- タグ位置保存ノードの起動 -->
+    <node pkg="xarm_apriltag_demo"
+            type="save_multi_tag_pose.py"
+            name="save_multi_tag_pose"
+            output="screen">
+        <param name="tag_file" value="$(arg tag_file)" />
+        <param name="tag_ids" value="$(arg tag_ids)" />
+    </node>
+</launch>   

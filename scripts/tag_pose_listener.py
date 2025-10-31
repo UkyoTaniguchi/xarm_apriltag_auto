@@ -45,10 +45,10 @@ def save_tag_and_camera_pose(detections_msg):
         tag_info_lines.append(f"Position: x={t.x}, y={t.y}, z={t.z}")
         tag_info_lines.append(f"Orientation: x={r.x}, y={r.y}, z={r.z}, w={r.w}")
 
-        with open("/home/ukyo/catkin_ws/src/xarm_apriltag_demo/public/tag_pose.txt", "w") as f:
+        with open("/home/robot/nishidalab_ws/src/3_utils/xarm_apriltag_auto/public/tag_pose.txt", "w") as f:
             f.write("\n".join(tag_info_lines))
 
-        rospy.loginfo("Pose information saved to /tmp/tag_pose.txt")
+        rospy.loginfo("Pose information saved to /home/robot/nishidalab_ws/src/3_utils/xarm_apriltag_auto/public/tag_pose.txt")
         saved = True
 
     except Exception as e:
