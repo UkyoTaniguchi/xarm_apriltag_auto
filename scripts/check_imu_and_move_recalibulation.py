@@ -88,7 +88,7 @@ class ImuTriggerRecalibrationWithPlot:
         )
         self.spin()
 
-    # -------------------- 便利関数: XYZ+RPY指定 --------------------
+    # -------------------- XYZ+RPY指定 --------------------
     def move_to_xyzrpy(self, x, y, z, rx, ry, rz):
         pose = self.arm.get_current_pose().pose
         pose.position.x = x
