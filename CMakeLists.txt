@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(xarm_apriltag_demo)
 
-## ==============================
-## === 必要パッケージの検出 ===
-## ==============================
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   moveit_ros_planning_interface
@@ -17,9 +14,6 @@ find_package(catkin REQUIRED COMPONENTS
 
 find_package(PCL REQUIRED)
 
-## ==============================
-## === catkin パッケージ設定 ===
-## ==============================
 catkin_package(
   CATKIN_DEPENDS
     geometry_msgs
@@ -32,29 +26,14 @@ catkin_package(
     pcl_ros
 )
 
-## ==============================
-## === インクルード設定 ===
-## ==============================
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
 )
 
-## ==============================
-## === PointCloud Merge Node ===
-## ==============================
-add_executable(merge_pointcloud src/merge_pointcloude.cpp)
+# --- 実行ファイルなしなのでここは削除 ---
+# add_executable(...)
+# target_link_libraries(...)
+# add_dependencies(...)
 
-target_link_libraries(merge_pointcloud
-  ${catkin_LIBRARIES}
-  ${PCL_LIBRARIES}
-)
-
-add_dependencies(merge_pointcloud ${catkin_EXPORTED_TARGETS})
-
-## ==============================
-## === インストール設定 ===
-## ==============================
-install(TARGETS merge_pointcloud
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
+# install も不要なら削除可
