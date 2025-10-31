@@ -120,23 +120,24 @@ def apriltag_towoard_pose():
     xarm.set_pose_target(target_pose)
     xarm.go()
 
-"""
-課題にある動作を実現する関数を作ってみよう.
-なお、必ずGazeboシミュレーション上で動作を確認してから実機でチェックを行うこと.
-moveitの関数の使い方の説明等は以下のURLを見れば分かります.
-URL:https://robo-marc.github.io/moveit_documents/moveit_commander.html
+def go_to_predefined_pose():
+    # オイラー角をクォータニオンに変換
+    q = quaternion_from_euler(0, math.pi/2, 0)
 
+    target_pose = geometry_msgs.msg.Pose()
+    target_pose.position.x = 0.65
+    target_pose.position.y = 0.10
+    target_pose.position.z = 0.30
+    target_pose.orientation.x = q[0]
+    target_pose.orientation.y = q[1]
+    target_pose.orientation.z = q[2]
+    target_pose.orientation.w = q[3]
 
-gazeboでシミュレーションする方法:
-ターミナル
-$ roslaunch xarm_gazebo xarm6_beside_table.launch
-別ターミナル
-$ roslaunch xarm6_moveit_config xarm6_moveit_gazebo.launch
+    xarm.set_max_velocity_scaling_factor(0.2)
+    xarm.set_max_acceleration_scaling_factor(0.2)
+    xarm.set_pose_target(target_pose)
+    xarm.go()
 
-実機で動作させる場合:
-$ roslaunch xarm6_moveit_config realMove_exec.launch robot_ip:=192.168.1.217 
-
-"""
 
 
 if __name__ == '__main__':
@@ -150,6 +151,7 @@ if __name__ == '__main__':
         print("q:終了")
         print("t:テストポーズ")
         print("h:ホームポジションに戻る")
+        print("p:事前定義ポーズへ移動")
         print("a:apriltag認識ポーズ")
         mode = input("mode select>>")
         print("You select mode : %s " % mode)
@@ -165,6 +167,9 @@ if __name__ == '__main__':
 
         elif mode=="h":
             Go_homeposition()
+
+        elif mode == "p":
+            go_to_predefined_pose()
 
         elif mode == "a":
             # x = float(input("x方向を入力"))
