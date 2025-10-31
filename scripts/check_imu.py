@@ -63,7 +63,7 @@ class ImuMonitorTriggerWithPlot:
         # =========================
         # IMU購読開始
         # =========================
-        rospy.Subscriber("/camera/imu", Imu, self.imu_callback)
+        rospy.Subscriber("/camera/camera/imu", Imu, self.imu_callback)
         rospy.loginfo("IMU Monitor + Plot + Recalibration Trigger Ready.")
 
         # =========================
