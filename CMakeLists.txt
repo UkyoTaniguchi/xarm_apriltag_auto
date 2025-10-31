@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(xarm_apriltag_demo)
 
+## ==============================
+## === 必要パッケージの検出 ===
+## ==============================
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   moveit_ros_planning_interface
@@ -14,6 +17,9 @@ find_package(catkin REQUIRED COMPONENTS
 
 find_package(PCL REQUIRED)
 
+## ==============================
+## === catkin パッケージ設定 ===
+## ==============================
 catkin_package(
   CATKIN_DEPENDS
     geometry_msgs
@@ -26,6 +32,9 @@ catkin_package(
     pcl_ros
 )
 
+## ==============================
+## === インクルード設定 ===
+## ==============================
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
