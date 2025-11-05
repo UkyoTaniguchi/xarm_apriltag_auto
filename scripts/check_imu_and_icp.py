@@ -41,9 +41,9 @@ class ImuIcpMonitor:
         self.imu_topic = rospy.get_param("~imu_topic", "/camera/camera/imu")
 
         # ROI設定（0〜1の割合指定）
-        self.roi_xmin = rospy.get_param("~roi_xmin", 0)
-        self.roi_xmax = rospy.get_param("~roi_xmax", 0.75)
-        self.roi_ymin = rospy.get_param("~roi_ymin", 0)
+        self.roi_xmin = rospy.get_param("~roi_xmin", 0.25)
+        self.roi_xmax = rospy.get_param("~roi_xmax", 0.4)
+        self.roi_ymin = rospy.get_param("~roi_ymin", 0.2)
         self.roi_ymax = rospy.get_param("~roi_ymax", 0.5)
 
         # 軽量化設定
@@ -70,6 +70,8 @@ class ImuIcpMonitor:
         N = self.window_len
         self.dx_buf, self.dy_buf, self.dz_buf = deque(maxlen=N), deque(maxlen=N), deque(maxlen=N)
         self.tilt_buf = deque(maxlen=N)
+
+        self.frame_index = 0  # 横軸用カウンタ
 
         self.K = None
         self.has_camera_info = False
@@ -115,16 +117,21 @@ class ImuIcpMonitor:
         (self.line_dx,) = self.ax_icp.plot([], [], label="Δx [m]")
         (self.line_dy,) = self.ax_icp.plot([], [], label="Δy [m]")
         (self.line_dz,) = self.ax_icp.plot([], [], label="Δz [m]")
-        self.ax_icp.set_ylim(-0.5, 0.5)
+        self.ax_icp.set_ylim(-0.2, 0.2  )
         self.ax_icp.set_ylabel("ICP Δ[m]")
-        self.ax_icp.legend(loc="upper right")
         self.ax_icp.grid(True)
+        # ---- 凡例を右外に出す ----
+        self.ax_icp.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
+
         (self.line_tilt,) = self.ax_tilt.plot([], [], label="Tilt [deg]")
         self.ax_tilt.set_ylim(0, 10)
         self.ax_tilt.set_ylabel("Tilt [deg]")
         self.ax_tilt.set_xlabel("Frame Index")
-        self.ax_tilt.legend(loc="upper right")
         self.ax_tilt.grid(True)
+        # ---- 下段も外側に ----
+        self.ax_tilt.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
+
+        self.fig.tight_layout(rect=[0, 0, 0.85, 1])  # 凡例分だけ右に余白
 
     # =========================================================
     def imu_callback(self, msg: Imu):
@@ -279,19 +286,30 @@ class ImuIcpMonitor:
             dz = np.array(self.dz_buf)
             tilt = np.array(self.tilt_buf)
         m = max(len(dx), len(dy), len(dz), len(tilt), 1)
-        x = np.arange(m)
+        x = np.arange(self.frame_index - m + 1, self.frame_index + 1)
+
         def pad(a):
             b = np.zeros(m)
             if len(a) > 0:
                 b[-len(a):] = a
             return b
+
         dx, dy, dz, tilt = pad(dx), pad(dy), pad(dz), pad(tilt)
         self.line_dx.set_data(x, dx)
         self.line_dy.set_data(x, dy)
         self.line_dz.set_data(x, dz)
         self.line_tilt.set_data(x, tilt)
-        self.ax_icp.set_xlim(max(0, m - self.window_len), max(1, m))
-        self.ax_tilt.set_xlim(max(0, m - self.window_len), max(1, m))
+
+        # --- 警告回避: フレームが2以上のときのみ軸を更新 ---
+        if self.frame_index > 1:
+            xmin = max(0, self.frame_index - self.window_len)
+            xmax = self.frame_index
+            if xmin == xmax:
+                xmax += 1  # ゼロ幅防止
+            self.ax_icp.set_xlim(xmin, xmax)
+            self.ax_tilt.set_xlim(xmin, xmax)
+
+        self.frame_index += 1
         return [self.line_dx, self.line_dy, self.line_dz, self.line_tilt]
 
     # =========================================================
