@@ -304,7 +304,10 @@ class ImuIcpMonitor:
             reg = o3d.pipelines.registration.registration_icp(
                 pcd, self.initial_pcd,
                 max_correspondence_distance=self.icp_max_corr,
-                estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane()
+                # point to plane
+                # estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane()
+                # point to pointの場合はこちら
+                estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint()
             )
             T = reg.transformation  # 4x4 同次変換
             dx, dy, dz = T[0, 3], T[1, 3], T[2, 3]
