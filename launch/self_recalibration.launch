@@ -1,0 +1,10 @@
+<launch>
+  <rosparam file="$(find xarm_apriltag_demo)/config/thresholds.yaml" command="load"/>
+  <rosparam file="$(find xarm_apriltag_demo)/config/roi.yaml" command="load"/>
+  <rosparam file="$(find xarm_apriltag_demo)/config/poses.yaml" command="load"/>
+
+  <node pkg="xarm_apriltag_demo"
+        type="main_supervisor.py"
+        name="main_supervisor"
+        output="screen" />
+</launch>
