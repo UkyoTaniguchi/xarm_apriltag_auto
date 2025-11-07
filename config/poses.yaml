@@ -1,8 +1,0 @@
-poses:
-  recalib_pose:
-    x: 0.00
-    y: -0.50
-    z: 0.30
-    rx_deg: 90.0
-    ry_deg: 0.0
-    rz_deg: 0.0

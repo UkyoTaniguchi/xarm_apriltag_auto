@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #pick_and_placeの童話を行うためのモジュール
 #config/pick_and_place.yamlのパラメータを使用する
 import os
@@ -10,6 +11,8 @@ import moveit_commander
 from geometry_msgs.msg import Pose
 from tf.transformations import quaternion_from_euler
 from std_srvs.srv import Trigger, TriggerResponse
+
+MOTION_LOCK_PARAM = "/motion_lock"   # ← 他ノードと共有する排他パラメータ
 
 #=========================================================
 # YAMLを読み込んで姿勢dictを返す
@@ -94,6 +97,12 @@ class PickAndPlace:
         """定期的にピック&プレース動作を繰り返すループ"""
         rate = rospy.Rate(10)
         while not rospy.is_shutdown() and not self.shutdown_flag:
+            # --- 他ノードによる動作ロックを確認 ---
+            if rospy.get_param(MOTION_LOCK_PARAM, False):
+                rospy.loginfo_throttle(5.0, "他ノード(再キャリブ等)が動作中のため待機中...")
+                rate.sleep()
+                continue
+
             if self.is_running:  # 再キャリブ中は動作停止
                 rate.sleep()
                 continue
@@ -102,6 +111,11 @@ class PickAndPlace:
                     rospy.loginfo("=== Pick & Place サイクル開始 ===")
 
                     for pose_name in self.sequence:
+                        # --- 再キャリブ開始時に中断 ---
+                        if rospy.get_param(MOTION_LOCK_PARAM, False):
+                            rospy.loginfo("外部ロック検出。ピック&プレースを一時停止。")
+                            break
+
                         if pose_name not in self.poses:
                             rospy.logwarn(f"YAML内に {pose_name} が存在しません。スキップします。")
                             continue
