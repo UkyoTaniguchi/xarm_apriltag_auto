@@ -101,6 +101,9 @@ class PickAndPlace:
     def pick_and_place_loop(self):
         """定期的にピック&プレース動作を繰り返すループ"""
         rate = rospy.Rate(10)
+        #ENTERを押したら開始
+        input("ピックアンドプレース動作を開始するにはEnterキーを押してください...")
+        rospy.loginfo("Pick & Place loop started.")
         while not rospy.is_shutdown() and not self.shutdown_flag:
             # --- 他ノードによる動作ロックを確認 ---
             if rospy.get_param(MOTION_LOCK_PARAM, False):
