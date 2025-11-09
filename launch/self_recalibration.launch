@@ -4,7 +4,7 @@
   <rosparam file="$(find xarm_apriltag_demo)/config/recalib_poses.yaml" command="load"/>
 
   <!-- <node pkg="xarm_apriltag_demo" type="pick_and_place.py" name="pick_and_place" output="screen"/> -->
-  <!-- <node pkg="xarm_apriltag_demo" type="imu_icp_monitor.py" name="imu_icp_monitor" output="screen"/> -->
+  <node pkg="xarm_apriltag_demo" type="imu_icp_monitor.py" name="imu_icp_monitor" output="screen"/>
   <!-- <node pkg="xarm_apriltag_demo" type="camera_supervisor.py" name="camera_supervisor" output="screen"/> -->
   <!-- <node pkg="xarm_apriltag_demo" type="roi_selector.py" name="roi_selector" output="screen"/> -->
   <!-- <node pkg="xarm_apriltag_demo" type="move_to_tag.py" name="xarm_recalibration_server" output="screen"/> -->
