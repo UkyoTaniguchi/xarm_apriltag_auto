@@ -13,6 +13,7 @@ from tf.transformations import quaternion_from_euler
 from std_srvs.srv import Trigger, TriggerResponse
 
 MOTION_LOCK_PARAM = "/motion_lock"   # ← 他ノードと共有する排他パラメータ
+MOTION_BUSY_PARAM = "/motion_busy"   # ← 現在サイクル中かどうかを表す
 
 #=========================================================
 # YAMLを読み込んで姿勢dictを返す
@@ -58,6 +59,10 @@ class PickAndPlace:
     def __init__(self):
         rospy.init_node("pick_and_place_node")
         moveit_commander.roscpp_initialize([])
+        ns = "" if rospy.get_param("~use_root_ns", False) else rospy.get_namespace()
+        rospy.loginfo(f"Using MoveIt namespace: '{ns}'")
+        self.arm = moveit_commander.MoveGroupCommander("xarm6", ns="")
+
 
         # --- パラメータ ---
         self.pkg_name = rospy.get_param("~package_name", "xarm_apriltag_demo")
@@ -108,6 +113,7 @@ class PickAndPlace:
                 continue
             try:
                 with self.lock:
+                    rospy.set_param(MOTION_BUSY_PARAM, True)  # ← サイクル開始を通知
                     rospy.loginfo("=== Pick & Place サイクル開始 ===")
 
                     for pose_name in self.sequence:
@@ -133,8 +139,11 @@ class PickAndPlace:
 
                         rospy.sleep(0.1)
 
+                    rospy.set_param(MOTION_BUSY_PARAM, False)  # ← サイクル終了を通知
+
             except Exception as e:
                 rospy.logwarn(f"Pick & Place ループエラー: {e}")
+                rospy.set_param(MOTION_BUSY_PARAM, False)
 
             rate.sleep()
 

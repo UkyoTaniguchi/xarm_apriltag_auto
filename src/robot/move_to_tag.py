@@ -11,6 +11,7 @@ from tf.transformations import quaternion_from_euler
 from std_srvs.srv import Trigger, TriggerResponse
 
 MOTION_LOCK_PARAM = "/motion_lock"   # ← 他ノードと共有する排他パラメータ
+MOTION_BUSY_PARAM = "/motion_busy"   # ← Pick&Placeの動作中状態
 
 def load_poses_from_yaml(package_name: str, rel_path: str, root_key: str):
     """
@@ -52,6 +53,16 @@ class RecalibrationServer:
     def __init__(self):
         rospy.init_node("xarm_recalibration_server")
         moveit_commander.roscpp_initialize([])
+        ns = "" if rospy.get_param("~use_root_ns", False) else rospy.get_namespace()
+        rospy.loginfo(f"Using MoveIt namespace: '{ns}'")
+        self.arm = moveit_commander.MoveGroupCommander("xarm6", ns="")
+
+
+        # --- 起動ディレイ（競合防止用） ---
+        wait_before = rospy.get_param("~wait_before_start", 0.0)
+        if wait_before > 0:
+            rospy.loginfo(f"Delaying start by {wait_before} sec to avoid MoveIt conflict...")
+            rospy.sleep(wait_before)
 
         # --- パラメータ ---
         self.pkg_name = rospy.get_param("~package_name", "xarm_apriltag_demo")
@@ -90,6 +101,11 @@ class RecalibrationServer:
         # --- Pick&Placeノードを停止させる ---
         rospy.set_param(MOTION_LOCK_PARAM, True)
         rospy.loginfo("Pick&Placeノードに動作停止を要求中...")
+
+        # --- Pick&Placeのサイクル完了を待機 ---
+        while rospy.get_param(MOTION_BUSY_PARAM, False):
+            rospy.loginfo_throttle(5.0, "Pick&Place完了待機中...")
+            rospy.sleep(1.0)
 
         self.is_running = True
         try:
