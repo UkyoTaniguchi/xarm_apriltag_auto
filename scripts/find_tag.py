@@ -18,7 +18,7 @@ xarm = moveit_commander.MoveGroupCommander("xarm6")
 TARGET_POSE_STAMPED = None 
 
 # サブスクライブするトピック名
-TARGET_POSE_TOPIC = "/ar_tag/pose_in_world"
+TARGET_POSE_TOPIC = "/ar_tag/id0/pose_in_world"
 
 FIXED_QUATERNION = quaternion_from_euler(math.pi/2, -math.pi/2, math.pi/2)
 
@@ -64,10 +64,6 @@ def pose_callback(msg):
     
     # コピーすることで、オリジナルのメッセージを変更することを防ぎます
     modified_pose = copy.deepcopy(msg.pose)
-    
-    # --- 1. 位置のオフセット (X座標から 0.28m 引く) ---
-    # modified_pose.position.x -= 0.2
-    # modified_pose.position.z -= 0.15
    
     # --- 2. 姿勢の固定 (事前に計算したクォータニオンで上書き) ---
     orientation_quat = np.array([
@@ -83,11 +79,9 @@ def pose_callback(msg):
     local_offset = np.array([0.0, 0.0, 0.25]) 
 
     # ローカル移動ベクトルをワールド座標系に変換
-    # r_current.apply() で回転行列を適用し、ワールド座標系でのベクトルを求める
     world_offset = r_current.apply(local_offset)
     
     # ワールド座標系の位置を更新
-    # 既存の固定オフセットの行をこれに置き換えます
     modified_pose.position.x += world_offset[0]
     modified_pose.position.y += world_offset[1]
     modified_pose.position.z += world_offset[2]
@@ -98,11 +92,9 @@ def pose_callback(msg):
     r_90_x = Rotation.from_rotvec(np.array([1, 0, 0]) * np.deg2rad(rotation_angle_x_deg))
 
     rotation_angle_z_deg = -90
-    # 回転軸: ローカルY軸 (0, 1, 0)
     r_90_z = Rotation.from_rotvec(np.array([0, 0, 1]) * np.deg2rad(rotation_angle_z_deg))
 
     # --- 3. 新しい姿勢の計算 (乗算) ---
-    # 新しい姿勢 = 現在の姿勢 * 180度回転 (q' = q * q_180)
     r_new = r_current * r_90_x* r_90_z
 
     # 新しい姿勢のクォータニオン成分を取得 (x, y, z, w)
