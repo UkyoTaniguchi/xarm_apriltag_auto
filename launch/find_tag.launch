@@ -1,0 +1,19 @@
+<launch>    
+    <node name="tag_pose_handeye_to_world"
+            pkg="xarm_apriltag_demo"
+            type="tag_pose_handeye_to_world.py"
+            output="screen"
+            cwd="node" />
+
+    <node name="find_tag"
+            pkg="xarm_apriltag_demo"
+            type="find_tag.py"
+            output="screen"
+            cwd="node" />
+
+    <node name="tag_pose_listener_2"
+            pkg="xarm_apriltag_demo"
+            type="tag_pose_listener_2.py"
+            output="screen"
+            cwd="node" />
+</launch>
