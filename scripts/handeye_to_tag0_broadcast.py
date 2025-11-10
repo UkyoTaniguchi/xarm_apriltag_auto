@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# world 座標系が親
+# worldから見たcam_2_linkのtfをbroadcastするノード
 
 import rospy
 import tf
