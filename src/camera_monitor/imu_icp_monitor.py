@@ -2,11 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 IMU監視 + ICPズレ検出 + Depth表示 + 折れ線グラフ可視化（ROI可視対応・動的基準更新）
-- 上段: ICP平行移動(Δx,Δy,Δz) [m]
-- 下段: IMU傾き角(Tilt) [deg]
-- Depth表示は全体表示＋赤枠ROI描画（ROI外も可視化）
-- ICPはROI内のみを対象に計算
-- ROIは /monitor/roi (Float32MultiArray) から動的に更新可能
+- ROI受信(/monitor/roi)後にIMU・ICP・グラフ更新を開始
 """
 
 import math, time, threading, signal
@@ -21,41 +17,32 @@ import rospy
 from threading import Lock
 from collections import deque
 from sensor_msgs.msg import Imu, Image, CameraInfo
-from std_msgs.msg import Float32MultiArray
-from std_msgs.msg import Float32  # ★追加: ICPノルムpublish用
-from std_srvs.srv import Trigger
+from std_msgs.msg import Float32MultiArray, Float32
 from cv_bridge import CvBridge
+
+# ★追加
+from std_srvs.srv import Trigger, TriggerResponse
 
 
 class ImuIcpMonitor:
     def __init__(self):
         rospy.init_node("imu_icp_monitor")
 
-        # ==========================
-        # パラメータ
-        # ==========================
+        # ---- パラメータ ----
         self.tilt_threshold_deg = rospy.get_param("~tilt_threshold_deg", 1.0)
         self.icp_threshold = rospy.get_param("~icp_threshold", 0.05)
         self.alpha = rospy.get_param("~alpha", 0.1)
         self.update_rate = rospy.get_param("~update_rate", 10.0)
         self.window_len = int(rospy.get_param("~window_len", 500))
+        self.depth_topic = rospy.get_param("~depth_topic", "/camera/cam_2/depth/image_rect_raw")
+        self.camera_info_topic = rospy.get_param("~camera_info_topic", "/camera/cam_2/depth/camera_info")
+        self.imu_topic = rospy.get_param("~imu_topic", "/camera/cam_2/imu")
 
-        self.depth_topic = rospy.get_param("~depth_topic", "/camera/camera/depth/image_rect_raw")
-        self.camera_info_topic = rospy.get_param("~camera_info_topic", "/camera/camera/depth/camera_info")
-        self.imu_topic = rospy.get_param("~imu_topic", "/camera/camera/imu")
+        self.roi_xmin = 0
+        self.roi_xmax = 1.0
+        self.roi_ymin = 0
+        self.roi_ymax = 1.0
 
-        # # ROI初期値
-        # self.roi_xmin = rospy.get_param("~roi_xmin", 0.25)
-        # self.roi_xmax = rospy.get_param("~roi_xmax", 0.4)
-        # self.roi_ymin = rospy.get_param("~roi_ymin", 0.2)
-        # self.roi_ymax = rospy.get_param("~roi_ymax", 0.5)
-
-        # ROI初期値
-        self.roi_xmin = rospy.get_param("~roi_xmin", 0)
-        self.roi_xmax = rospy.get_param("~roi_xmax", 1.0)
-        self.roi_ymin = rospy.get_param("~roi_ymin", 0)
-        self.roi_ymax = rospy.get_param("~roi_ymax", 1.0)
-        # 前処理・ICP設定
         self.downsample_step = 4
         self.voxel_size = 0.02
         self.icp_rate = 2.0
@@ -72,13 +59,11 @@ class ImuIcpMonitor:
         self.last_update_time = 0.0
         self.last_icp_time = 0.0
         self.buffer_lock = Lock()
-        self.is_recalibrating = False
-
         self.initial_pcd = None
-        self.latest_pcd = None
         self.latest_depth_vis = None
         self.K = None
         self.has_camera_info = False
+        self.roi_received = False  # ★追加: ROI受信済みフラグ
 
         # グラフ用バッファ
         N = self.window_len
@@ -90,6 +75,7 @@ class ImuIcpMonitor:
 
         # ★追加: ICPノルムpublish
         self.pub_icp = rospy.Publisher("/monitor/icp_trans_norm", Float32, queue_size=1)
+        self.pub_tilt = rospy.Publisher("/monitor/tilt_deg", Float32, queue_size=1)
 
         # ==========================
         # サブスクライバ
@@ -99,6 +85,9 @@ class ImuIcpMonitor:
         rospy.Subscriber(self.depth_topic, Image, self.depth_callback, queue_size=1)
         rospy.Subscriber("/monitor/roi", Float32MultiArray, self.roi_callback, queue_size=1)
         rospy.loginfo("IMU + ICP + Depth Monitor ready.")
+
+        # ★追加：基準リセットサービス
+        self.reset_srv = rospy.Service("/monitor/reset_reference", Trigger, self.reset_reference_callback)
 
         # ==========================
         # Depth表示スレッド
@@ -119,15 +108,33 @@ class ImuIcpMonitor:
         self.spin()
 
     # ---------------------------------------------------------------------
+    # ★追加：基準リセット処理
+    def reset_reference(self):
+
+        # 次のDepthで基準点群を取り直す
+        self.initial_pcd = None
+
+        # IMU基準方向を更新
+        if self.filtered_gravity_dir is not None:
+            self.reference_dir = self.filtered_gravity_dir.copy()
+
+        rospy.loginfo("Reference reset: IMU & ICP baseline updated.")
+
+    def reset_reference_callback(self, req):
+        self.reset_reference()
+        return TriggerResponse(success=True, message="Reference reset.")
+
+    # ---------------------------------------------------------------------
     def roi_callback(self, msg):
         """ROIを外部トピック(/monitor/roi)から更新"""
         if len(msg.data) == 4:
             self.roi_xmin, self.roi_ymin, self.roi_xmax, self.roi_ymax = msg.data
+            self.roi_received = True  # ★ROI受信後にすべての処理を許可
             rospy.loginfo(f"ROI updated to {msg.data}")
 
     # ---------------------------------------------------------------------
-    def camera_info_callback(self, msg: CameraInfo):
-        fx = msg.K[0]; fy = msg.K[4]; cx = msg.K[2]; cy = msg.K[5]
+    def camera_info_callback(self, msg):
+        fx, fy, cx, cy = msg.K[0], msg.K[4], msg.K[2], msg.K[5]
         self.K = (fx, fy, cx, cy, msg.width, msg.height)
         self.has_camera_info = True
 
@@ -151,28 +158,43 @@ class ImuIcpMonitor:
         self.fig.tight_layout(rect=[0, 0, 0.85, 1])
 
     # ---------------------------------------------------------------------
-    def imu_callback(self, msg: Imu):
+    def imu_callback(self, msg):
+        if not self.roi_received:
+            return
         now = time.time()
         if now - self.last_update_time < 1.0 / self.update_rate:
             return
         self.last_update_time = now
-        a = np.array([msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z])
+
+        a = np.array([msg.linear_acceleration.x,
+                    msg.linear_acceleration.y,
+                    msg.linear_acceleration.z])
         n = np.linalg.norm(a)
         if n < 1e-6:
             return
+
         g = a / n
         if self.filtered_gravity_dir is None:
             self.filtered_gravity_dir = g.copy()
         if self.reference_dir is None:
             self.reference_dir = g.copy()
+
         self.filtered_gravity_dir = (1 - self.alpha) * self.filtered_gravity_dir + self.alpha * g
         self.filtered_gravity_dir /= np.linalg.norm(self.filtered_gravity_dir)
-        tilt = math.degrees(math.acos(np.clip(np.dot(self.filtered_gravity_dir, self.reference_dir), -1, 1)))
+
+        tilt = math.degrees(math.acos(
+            np.clip(np.dot(self.filtered_gravity_dir, self.reference_dir), -1, 1)
+        ))
+
+        self.pub_tilt.publish(Float32(data=tilt))
+
         with self.buffer_lock:
             self.tilt_buf.append(tilt)
 
     # ---------------------------------------------------------------------
-    def depth_callback(self, msg: Image):
+    def depth_callback(self, msg):
+        if not self.roi_received:
+            return
         if not self.has_camera_info:
             return
         now = time.time()
@@ -219,7 +241,6 @@ class ImuIcpMonitor:
                     radius=self.normal_radius, max_nn=self.normal_max_nn
                 )
             )
-            self.latest_pcd = pcd
             if self.initial_pcd is None:
                 self.initial_pcd = pcd
                 rospy.loginfo("Initial ICP reference captured (ROI).")
@@ -236,11 +257,8 @@ class ImuIcpMonitor:
                 self.dy_buf.append(dy)
                 self.dz_buf.append(dz)
 
-            # ★追加: ROI選定ノード向けにノルムをpublish
             norm = float(math.sqrt(dx*dx + dy*dy + dz*dz))
-            rospy.loginfo(norm)
             self.pub_icp.publish(Float32(data=norm))
-
         except Exception as e:
             rospy.logwarn_throttle(1.0, f"Depth ICP failed: {e}")
 
@@ -257,6 +275,8 @@ class ImuIcpMonitor:
 
     # ---------------------------------------------------------------------
     def update_plot(self, frame):
+        if not self.roi_received:
+            return []
         with self.buffer_lock:
             dx = np.array(self.dx_buf)
             dy = np.array(self.dy_buf)
@@ -276,9 +296,7 @@ class ImuIcpMonitor:
         self.line_tilt.set_data(x, tilt)
         if self.frame_index > 1:
             xmin = max(0, self.frame_index - self.window_len)
-            xmax = self.frame_index
-            if xmin == xmax:
-                xmax += 1
+            xmax = self.frame_index if xmin < self.frame_index else xmin + 1
             self.ax_icp.set_xlim(xmin, xmax)
             self.ax_tilt.set_xlim(xmin, xmax)
         self.frame_index += 1

@@ -8,7 +8,7 @@ import rospkg
 import moveit_commander
 from geometry_msgs.msg import Pose
 from tf.transformations import quaternion_from_euler
-from std_srvs.srv import Trigger, TriggerResponse
+from std_srvs.srv import Trigger, TriggerResponse     # ← 既存
 
 MOTION_LOCK_PARAM = "/motion_lock"   # ← 他ノードと共有する排他パラメータ
 MOTION_BUSY_PARAM = "/motion_busy"   # ← Pick&Placeの動作中状態
@@ -84,6 +84,9 @@ class RecalibrationServer:
         # --- YAML読み込み ---
         self.poses = load_poses_from_yaml(self.pkg_name, self.yaml_rel_path, self.yaml_root_key)
 
+        # --- ★追加：IMU/ICP基準リセットサービスクライアント ---
+        self.reset_reference_client = rospy.ServiceProxy("/monitor/reset_reference", Trigger)
+
         # --- 再キャリブレーションサービス登録 ---
         self.srv = rospy.Service("/recalibration/run", Trigger, self.handle_recalibration)
         rospy.loginfo("Service [/recalibration/run] ready.")
@@ -140,6 +143,14 @@ class RecalibrationServer:
                     return TriggerResponse(success=False, message="ホーム復帰に失敗しました。")
 
                 rospy.loginfo("=== 再キャリブレーション完了 ===")
+
+                # --- ★追加：IMU/ICP基準リセットを呼び出す ---
+                try:
+                    res = self.reset_reference_client()
+                    rospy.loginfo(f"IMU/ICP reference reset: {res.message}")
+                except Exception as e:
+                    rospy.logerr(f"Failed to reset IMU/ICP reference: {e}")
+
                 return TriggerResponse(success=True, message="再キャリブレーション完了。")
 
         except Exception as e:
@@ -152,7 +163,6 @@ class RecalibrationServer:
             self.is_running = False
             rospy.loginfo("Pick&Placeノードの動作再開を許可しました。")
             rospy.loginfo("=== 再キャリブレーション終了 ===")
-
 
     # =========================================================
     # Move Helper: XYZ + RPY

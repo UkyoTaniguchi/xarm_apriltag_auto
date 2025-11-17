@@ -14,7 +14,7 @@ class RoiStaticFixer:
         self.start_time = time.time()
 
         self.pub_roi = rospy.Publisher("/monitor/roi", Float32MultiArray, queue_size=1)
-        rospy.Subscriber("/camera/camera/depth/image_rect_raw", Image, self.depth_cb)
+        rospy.Subscriber("/camera/cam_2/depth/image_rect_raw", Image, self.depth_cb)
         rospy.loginfo(f"Collecting depth frames for {self.duration:.1f} sec...")
         rospy.spin()
 
@@ -39,7 +39,7 @@ class RoiStaticFixer:
 
         # ---- 動かなかった領域 = 下位 p% を抽出 ----
         # 目標ROI面積 ≈ 全体の5%
-        target_ratio = 0.05
+        target_ratio = 0.15
         num_pixels = H * W
         target_pixels = int(num_pixels * target_ratio)
 
