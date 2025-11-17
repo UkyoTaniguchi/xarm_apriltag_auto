@@ -1,8 +1,23 @@
 <!-- 自己再キャリブレーション動作を仮想環境で試すlaunchファイル -->
 <launch>
+  <!-- 引数 -->
+  <arg name="enable_pointcloud" default="true" />
   <!-- RealSense 実機 -->
   <group ns="camera">
     <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+      <arg name="camera" value="cam_2" />
+      <arg name="serial_no" value="337122071608" />
+      <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
+      <arg name="enable_gyro"  value="true"/>
+      <arg name="enable_accel" value="true"/>
+      <!-- <arg name="align_depth" value="true"/> -->
+      <arg name="unite_imu_method" value="linear_interpolation"/>
+    </include>
+
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+      <arg name="camera" value="cam_3" />
+      <arg name="serial_no" value="243122070422" />
+      <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
       <arg name="enable_gyro"  value="true"/>
       <arg name="enable_accel" value="true"/>
       <!-- <arg name="align_depth" value="true"/> -->
@@ -12,6 +27,12 @@
 
   <!-- MoveIt -->
   <include file="$(find xarm6_moveit_config)/launch/demo.launch">
+  </include>
+
+  <!-- AprilTag 認識ノード -->
+  <include file="$(find apriltag_ros)/launch/continuous_detection.launch">
+    <arg name="camera_name" value="/camera/cam_2/color" />
+    <arg name="image_topic" value="image_raw" />
   </include>
 </launch>
 
