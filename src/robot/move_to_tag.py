@@ -9,6 +9,7 @@ import moveit_commander
 from geometry_msgs.msg import Pose
 from tf.transformations import quaternion_from_euler
 from std_srvs.srv import Trigger, TriggerResponse     # ← 既存
+from std_msgs.msg import Empty   # ★追加
 
 MOTION_LOCK_PARAM = "/motion_lock"   # ← 他ノードと共有する排他パラメータ
 MOTION_BUSY_PARAM = "/motion_busy"   # ← Pick&Placeの動作中状態
@@ -57,6 +58,8 @@ class RecalibrationServer:
         rospy.loginfo(f"Using MoveIt namespace: '{ns}'")
         self.arm = moveit_commander.MoveGroupCommander("xarm6", ns="")
 
+        # --- ★追加：TF再読み込み通知パブリッシャ ---
+        self.reload_pub = rospy.Publisher("/recalib/reload_tf", Empty, queue_size=1)
 
         # --- 起動ディレイ（競合防止用） ---
         wait_before = rospy.get_param("~wait_before_start", 0.0)
@@ -140,6 +143,11 @@ class RecalibrationServer:
                         recalib_response = recalib_client()
                         if recalib_response.success:
                             rospy.loginfo("カメラキャリブレーションが成功しました。")
+
+                            # ★★★ 追加：TF更新ノードに通知 ★★★
+                            self.reload_pub.publish()
+                            rospy.loginfo("TF再読み込みを通知しました。")
+
                         else:
                             rospy.logerr(f"カメラキャリブレーションに失敗しました: {recalib_response.message}")
                             rospy.set_param(MOTION_LOCK_PARAM, False)
