@@ -53,11 +53,18 @@ def handle_capture(req):
     except Exception as e:
         return TriggerResponse(success=False, message=f"TF取得失敗: {e}")
 
-    # 保存
-    with open(get_save_path(tag_id), "w") as f:
-        f.write("\n".join(lines))
+    save_path = get_save_path(tag_id)
 
-    rospy.loginfo(f"Pose saved to: {get_save_path(tag_id)}")
+    # 保存
+    with open(save_path, "w") as f:
+        f.write("\n".join(lines))
+    # ★★★ 保存した内容をログに出す（追加部分） ★★★
+    rospy.loginfo("==== Saved Content ====")
+    for ln in lines:
+        rospy.loginfo(ln)
+    rospy.loginfo("==== End Content ====")
+    rospy.loginfo(f"{save_path} にタグとカメラの姿勢を保存しました。")
+
     return TriggerResponse(success=True, message="Tag & Camera pose saved")
 
 def main():
