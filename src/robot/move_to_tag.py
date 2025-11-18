@@ -8,7 +8,8 @@ import rospkg
 import moveit_commander
 from geometry_msgs.msg import Pose
 from tf.transformations import quaternion_from_euler
-from std_srvs.srv import Trigger, TriggerResponse
+from std_srvs.srv import Trigger, TriggerResponse     # ← 既存
+from std_msgs.msg import Empty   # ★追加
 
 MOTION_LOCK_PARAM = "/motion_lock"   # ← 他ノードと共有する排他パラメータ
 MOTION_BUSY_PARAM = "/motion_busy"   # ← Pick&Placeの動作中状態
@@ -57,6 +58,8 @@ class RecalibrationServer:
         rospy.loginfo(f"Using MoveIt namespace: '{ns}'")
         self.arm = moveit_commander.MoveGroupCommander("xarm6", ns="")
 
+        # --- ★追加：TF再読み込み通知パブリッシャ ---
+        self.reload_pub = rospy.Publisher("/recalib/reload_tf", Empty, queue_size=1)
 
         # --- 起動ディレイ（競合防止用） ---
         wait_before = rospy.get_param("~wait_before_start", 0.0)
@@ -83,6 +86,9 @@ class RecalibrationServer:
 
         # --- YAML読み込み ---
         self.poses = load_poses_from_yaml(self.pkg_name, self.yaml_rel_path, self.yaml_root_key)
+
+        # --- ★追加：IMU/ICP基準リセットサービスクライアント ---
+        self.reset_reference_client = rospy.ServiceProxy("/monitor/reset_reference", Trigger)
 
         # --- 再キャリブレーションサービス登録 ---
         self.srv = rospy.Service("/recalibration/run", Trigger, self.handle_recalibration)
@@ -122,12 +128,38 @@ class RecalibrationServer:
                     x=0.0, y=-0.50, z=0.30,
                     rx=math.radians(90.0), ry=0.0, rz=0.0
                 )
-                if not success:
+
+                # 再キャリブ姿勢に移動できたのか確認
+                if success:
+                    rospy.loginfo("現在の姿勢を確認中...")
+                    #現在の姿勢を取得
+                    current_pose = self.arm.get_current_pose().pose
+                    rospy.loginfo(f"Current Pose: {current_pose}")
+                    rospy.loginfo("再キャリブレーション姿勢に到達しました。")
+                    rospy.loginfo("カメラキャリブレーションを実行します")
+                    # カメラキャリブレーション処理サービスの呼び出し
+                    try:
+                        recalib_client = rospy.ServiceProxy("/capture_tag_pose", Trigger)
+                        recalib_response = recalib_client()
+                        if recalib_response.success:
+                            rospy.loginfo("カメラキャリブレーションが成功しました。")
+
+                            # ★★★ 追加：TF更新ノードに通知 ★★★
+                            self.reload_pub.publish()
+                            rospy.loginfo("TF再読み込みを通知しました。")
+
+                        else:
+                            rospy.logerr(f"カメラキャリブレーションに失敗しました: {recalib_response.message}")
+                            rospy.set_param(MOTION_LOCK_PARAM, False)
+                            return TriggerResponse(success=False, message="カメラキャリブレーションに失敗しました。")
+                    except Exception as e:
+                        rospy.logerr(f"カメラキャリブレーションサービスの呼び出しに失敗しました: {e}")
+                        rospy.set_param(MOTION_LOCK_PARAM, False)
+                        return TriggerResponse(success=False, message="カメラキャリブレーションサービスの呼び出しに失敗しました。")
+                else:
                     rospy.set_param(MOTION_LOCK_PARAM, False)
-                    return TriggerResponse(success=False, message="再キャリブレーション姿勢への移動に失敗しました。")
-
-                rospy.sleep(2.0)  # 静止状態を確保（再キャリブ実施中）
-
+                    return TriggerResponse(success=False, message="再キャリブレーション姿勢に到達できませんでした。")
+                # ホーム姿勢へ復帰
                 rospy.loginfo("ホーム姿勢へ復帰中...")
                 self.arm.stop()
                 self.arm.clear_pose_targets()
@@ -140,6 +172,14 @@ class RecalibrationServer:
                     return TriggerResponse(success=False, message="ホーム復帰に失敗しました。")
 
                 rospy.loginfo("=== 再キャリブレーション完了 ===")
+
+                # --- ★追加：IMU/ICP基準リセットを呼び出す ---
+                try:
+                    res = self.reset_reference_client()
+                    rospy.loginfo(f"IMU/ICP reference reset: {res.message}")
+                except Exception as e:
+                    rospy.logerr(f"Failed to reset IMU/ICP reference: {e}")
+
                 return TriggerResponse(success=True, message="再キャリブレーション完了。")
 
         except Exception as e:
@@ -152,7 +192,6 @@ class RecalibrationServer:
             self.is_running = False
             rospy.loginfo("Pick&Placeノードの動作再開を許可しました。")
             rospy.loginfo("=== 再キャリブレーション終了 ===")
-
 
     # =========================================================
     # Move Helper: XYZ + RPY

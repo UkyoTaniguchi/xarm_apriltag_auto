@@ -3,17 +3,10 @@
   <rosparam file="$(find xarm_apriltag_demo)/config/roi.yaml" command="load"/>
   <rosparam file="$(find xarm_apriltag_demo)/config/recalib_poses.yaml" command="load"/>
 
-  <!-- <node pkg="xarm_apriltag_demo" type="pick_and_place.py" name="pick_and_place" output="screen"/> -->
   <node pkg="xarm_apriltag_demo" type="imu_icp_monitor.py" name="imu_icp_monitor" output="screen"/>
   <!-- <node pkg="xarm_apriltag_demo" type="camera_supervisor.py" name="camera_supervisor" output="screen"/> -->
-  <!-- <node pkg="xarm_apriltag_demo" type="roi_selector.py" name="roi_selector" output="screen"/> -->
-  <!-- <node pkg="xarm_apriltag_demo" type="move_to_tag.py" name="xarm_recalibration_server" output="screen"/> -->
-  <!-- <node pkg="xarm_apriltag_demo" type="robot_task_manager.py" name="robot_task_manager" output="screen"/> -->
-  <!-- Pick&Placeを先に起動 -->
+  <node pkg="xarm_apriltag_demo" type="roi_selector.py" name="roi_selector" output="screen"/>
+  <node pkg="xarm_apriltag_demo" type="move_to_tag.py" name="xarm_recalibration_server" output="screen"/>
   <node pkg="xarm_apriltag_demo" type="pick_and_place.py" name="pick_and_place" output="screen" />
-
-  <!-- 5秒待ってからRecalibrationを起動 -->
-  <node pkg="xarm_apriltag_demo" type="move_to_tag.py" name="xarm_recalibration_server" output="screen">
-    <param name="wait_before_start" value="5.0"/>
-  </node>
+  <node pkg="xarm_apriltag_demo" type="calib_cam_to_world.py" name="calib_cam_to_world" respawn="true" />
 </launch>

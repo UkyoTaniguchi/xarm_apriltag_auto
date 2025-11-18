@@ -1,68 +1,319 @@
 #!/usr/bin/env python3
-import math, time, threading, numpy as np, cv2, open3d as o3d
+# -*- coding: utf-8 -*-
+"""
+IMU監視 + ICPズレ検出 + Depth表示 + 折れ線グラフ可視化（ROI可視対応・動的基準更新）
+- ROI受信(/monitor/roi)後にIMU・ICP・グラフ更新を開始
+"""
+
+import math, time, threading, signal
+import numpy as np
+import matplotlib
+matplotlib.use("TkAgg")
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import cv2
+import open3d as o3d
 import rospy
+from threading import Lock
+from collections import deque
 from sensor_msgs.msg import Imu, Image, CameraInfo
-from std_msgs.msg import Float32, Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Float32
 from cv_bridge import CvBridge
+
+# ★追加
+from std_srvs.srv import Trigger, TriggerResponse
+
 
 class ImuIcpMonitor:
     def __init__(self):
         rospy.init_node("imu_icp_monitor")
-        self.bridge = CvBridge()
-        self.tilt_thr = rospy.get_param("/thresholds/tilt_threshold_deg", 1.0)
-        self.icp_rate = rospy.get_param("~icp_rate", 2.0)
+
+        # ---- パラメータ ----
+        self.tilt_threshold_deg = rospy.get_param("~tilt_threshold_deg", 1.0)
+        self.icp_threshold = rospy.get_param("~icp_threshold", 0.05)
         self.alpha = rospy.get_param("~alpha", 0.1)
-        self.depth_topic = rospy.get_param("~depth_topic","/camera/depth/image_rect_raw")
-        self.info_topic  = rospy.get_param("~camera_info_topic","/camera/depth/camera_info")
-        self.imu_topic   = rospy.get_param("~imu_topic","/camera/imu")
-        self.roi = [
-            rospy.get_param("/roi/xmin",0.25),
-            rospy.get_param("/roi/ymin",0.20),
-            rospy.get_param("/roi/xmax",0.40),
-            rospy.get_param("/roi/ymax",0.50)
-        ]
-        self.K=None; self.ref_g=None; self.filt_g=None; self.icp_ref=None
-        self.pub_tilt=rospy.Publisher("/monitor/tilt_deg",Float32,queue_size=1)
-        self.pub_icp=rospy.Publisher("/monitor/icp_trans_norm",Float32,queue_size=1)
-        rospy.Subscriber(self.info_topic,CameraInfo,self.cb_info)
-        rospy.Subscriber(self.imu_topic,Imu,self.cb_imu)
-        rospy.Subscriber(self.depth_topic,Image,self.cb_depth)
-        rospy.Subscriber("/monitor/roi",Float32MultiArray,self.cb_roi)
-        rospy.loginfo("imu_icp_monitor ready")
-        rospy.spin()
+        self.update_rate = rospy.get_param("~update_rate", 10.0)
+        self.window_len = int(rospy.get_param("~window_len", 500))
+        self.depth_topic = rospy.get_param("~depth_topic", "/camera/cam_2/depth/image_rect_raw")
+        self.camera_info_topic = rospy.get_param("~camera_info_topic", "/camera/cam_2/depth/camera_info")
+        self.imu_topic = rospy.get_param("~imu_topic", "/camera/cam_2/imu")
 
-    def cb_info(self,msg):
-        self.K=(msg.K[0],msg.K[4],msg.K[2],msg.K[5],msg.width,msg.height)
+        self.roi_xmin = 0
+        self.roi_xmax = 1.0
+        self.roi_ymin = 0
+        self.roi_ymax = 1.0
 
-    def cb_roi(self,msg):
-        if len(msg.data)==4:self.roi=list(msg.data)
+        self.downsample_step = 4
+        self.voxel_size = 0.02
+        self.icp_rate = 2.0
+        self.icp_max_corr = 0.1
+        self.depth_trunc = 1.5
+        self.normal_radius = 0.05
+        self.normal_max_nn = 30
 
-    def cb_imu(self,msg):
-        a=np.array([msg.linear_acceleration.x,msg.linear_acceleration.y,msg.linear_acceleration.z])
-        n=np.linalg.norm(a)
-        if n<1e-6:return
-        g=a/n
-        if self.filt_g is None:self.filt_g=g.copy()
-        if self.ref_g is None:self.ref_g=g.copy()
-        self.filt_g=(1-self.alpha)*self.filt_g+self.alpha*g
-        self.filt_g/=np.linalg.norm(self.filt_g)
-        tilt=math.degrees(math.acos(np.clip(np.dot(self.filt_g,self.ref_g),-1,1)))
+        # ==========================
+        # 内部状態
+        # ==========================
+        self.filtered_gravity_dir = None
+        self.reference_dir = None
+        self.last_update_time = 0.0
+        self.last_icp_time = 0.0
+        self.buffer_lock = Lock()
+        self.initial_pcd = None
+        self.latest_depth_vis = None
+        self.K = None
+        self.has_camera_info = False
+        self.roi_received = False  # ★追加: ROI受信済みフラグ
+
+        # グラフ用バッファ
+        N = self.window_len
+        self.dx_buf, self.dy_buf, self.dz_buf = deque(maxlen=N), deque(maxlen=N), deque(maxlen=N)
+        self.tilt_buf = deque(maxlen=N)
+        self.frame_index = 0
+
+        self.bridge = CvBridge()
+
+        # ★追加: ICPノルムpublish
+        self.pub_icp = rospy.Publisher("/monitor/icp_trans_norm", Float32, queue_size=1)
+        self.pub_tilt = rospy.Publisher("/monitor/tilt_deg", Float32, queue_size=1)
+
+        # ==========================
+        # サブスクライバ
+        # ==========================
+        rospy.Subscriber(self.imu_topic, Imu, self.imu_callback, queue_size=50)
+        rospy.Subscriber(self.camera_info_topic, CameraInfo, self.camera_info_callback, queue_size=1)
+        rospy.Subscriber(self.depth_topic, Image, self.depth_callback, queue_size=1)
+        rospy.Subscriber("/monitor/roi", Float32MultiArray, self.roi_callback, queue_size=1)
+        rospy.loginfo("IMU + ICP + Depth Monitor ready.")
+
+        # ★追加：基準リセットサービス
+        self.reset_srv = rospy.Service("/monitor/reset_reference", Trigger, self.reset_reference_callback)
+
+        # ==========================
+        # Depth表示スレッド
+        # ==========================
+        threading.Thread(target=self._depth_display_loop, daemon=True).start()
+
+        # ==========================
+        # 折れ線グラフ
+        # ==========================
+        self._init_plot()
+        self.anim = animation.FuncAnimation(
+            self.fig, self.update_plot,
+            interval=int(1000 / self.update_rate),
+            cache_frame_data=False
+        )
+
+        signal.signal(signal.SIGINT, self._sigint_handler)
+        self.spin()
+
+    # ---------------------------------------------------------------------
+    # ★追加：基準リセット処理
+    def reset_reference(self):
+
+        # 次のDepthで基準点群を取り直す
+        self.initial_pcd = None
+
+        # IMU基準方向を更新
+        if self.filtered_gravity_dir is not None:
+            self.reference_dir = self.filtered_gravity_dir.copy()
+
+        rospy.loginfo("Reference reset: IMU & ICP baseline updated.")
+
+    def reset_reference_callback(self, req):
+        self.reset_reference()
+        return TriggerResponse(success=True, message="Reference reset.")
+
+    # ---------------------------------------------------------------------
+    def roi_callback(self, msg):
+        """ROIを外部トピック(/monitor/roi)から更新"""
+        if len(msg.data) == 4:
+            self.roi_xmin, self.roi_ymin, self.roi_xmax, self.roi_ymax = msg.data
+            self.roi_received = True  # ★ROI受信後にすべての処理を許可
+            rospy.loginfo(f"ROI updated to {msg.data}")
+
+    # ---------------------------------------------------------------------
+    def camera_info_callback(self, msg):
+        fx, fy, cx, cy = msg.K[0], msg.K[4], msg.K[2], msg.K[5]
+        self.K = (fx, fy, cx, cy, msg.width, msg.height)
+        self.has_camera_info = True
+
+    # ---------------------------------------------------------------------
+    def _init_plot(self):
+        self.fig, (self.ax_icp, self.ax_tilt) = plt.subplots(2, 1, figsize=(10, 6))
+        self.fig.suptitle("ICP Δ[m] + IMU Tilt [deg]", fontsize=13)
+        (self.line_dx,) = self.ax_icp.plot([], [], label="Δx [m]")
+        (self.line_dy,) = self.ax_icp.plot([], [], label="Δy [m]")
+        (self.line_dz,) = self.ax_icp.plot([], [], label="Δz [m]")
+        self.ax_icp.set_ylim(-0.2, 0.2)
+        self.ax_icp.set_ylabel("ICP Δ[m]")
+        self.ax_icp.grid(True)
+        self.ax_icp.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
+        (self.line_tilt,) = self.ax_tilt.plot([], [], label="Tilt [deg]")
+        self.ax_tilt.set_ylim(0, 10)
+        self.ax_tilt.set_ylabel("Tilt [deg]")
+        self.ax_tilt.set_xlabel("Frame Index")
+        self.ax_tilt.grid(True)
+        self.ax_tilt.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
+        self.fig.tight_layout(rect=[0, 0, 0.85, 1])
+
+    # ---------------------------------------------------------------------
+    def imu_callback(self, msg):
+        if not self.roi_received:
+            return
+        now = time.time()
+        if now - self.last_update_time < 1.0 / self.update_rate:
+            return
+        self.last_update_time = now
+
+        a = np.array([msg.linear_acceleration.x,
+                    msg.linear_acceleration.y,
+                    msg.linear_acceleration.z])
+        n = np.linalg.norm(a)
+        if n < 1e-6:
+            return
+
+        g = a / n
+        if self.filtered_gravity_dir is None:
+            self.filtered_gravity_dir = g.copy()
+        if self.reference_dir is None:
+            self.reference_dir = g.copy()
+
+        self.filtered_gravity_dir = (1 - self.alpha) * self.filtered_gravity_dir + self.alpha * g
+        self.filtered_gravity_dir /= np.linalg.norm(self.filtered_gravity_dir)
+
+        tilt = math.degrees(math.acos(
+            np.clip(np.dot(self.filtered_gravity_dir, self.reference_dir), -1, 1)
+        ))
+
         self.pub_tilt.publish(Float32(data=tilt))
 
-    def cb_depth(self,msg):
-        if self.K is None:return
-        depth=self.bridge.imgmsg_to_cv2(msg,desired_encoding="passthrough")
-        if depth.dtype==np.uint16:depth=depth.astype(np.float32)/1000.0
-        fx,fy,cx,cy,W,H=self.K
-        x0,y0,x1,y1=self.roi
-        xmin,xmax=int(x0*W),int(x1*W);ymin,ymax=int(y0*H),int(y1*H)
-        mask=np.zeros_like(depth,bool);mask[ymin:ymax,xmin:xmax]=True
-        depth_roi=depth.copy();depth_roi[~mask]=0.0
-        intr=o3d.camera.PinholeCameraIntrinsic(W,H,fx,fy,cx,cy)
-        pcd=o3d.geometry.PointCloud.create_from_depth_image(o3d.geometry.Image(depth_roi),intr)
-        if self.icp_ref is None:self.icp_ref=pcd;return
-        reg=o3d.pipelines.registration.registration_icp(
-            pcd,self.icp_ref,0.1,
-            o3d.pipelines.registration.TransformationEstimationPointToPoint())
-        dx,dy,dz=reg.transformation[0,3],reg.transformation[1,3],reg.transformation[2,3]
-        self.pub_icp.publish(Float32(data=float(math.sqrt(dx*dx+dy*dy+dz*dz))))
+        with self.buffer_lock:
+            self.tilt_buf.append(tilt)
+
+    # ---------------------------------------------------------------------
+    def depth_callback(self, msg):
+        if not self.roi_received:
+            return
+        if not self.has_camera_info:
+            return
+        now = time.time()
+        if now - self.last_icp_time < 1.0 / self.icp_rate:
+            return
+        self.last_icp_time = now
+        try:
+            depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
+            if depth.dtype == np.uint16:
+                depth = depth.astype(np.float32) / 1000.0
+            elif depth.dtype != np.float32:
+                return
+            H_full, W_full = depth.shape
+            xmin = int(self.roi_xmin * W_full)
+            xmax = int(self.roi_xmax * W_full)
+            ymin = int(self.roi_ymin * H_full)
+            ymax = int(self.roi_ymax * H_full)
+            step = self.downsample_step
+            depth_ds = depth[::step, ::step]
+            fx, fy, cx, cy, W0, H0 = self.K
+            fx, fy, cx, cy = fx / step, fy / step, cx / step, cy / step
+            H, W = depth_ds.shape
+            xmin //= step; xmax //= step
+            ymin //= step; ymax //= step
+            mask = np.zeros_like(depth_ds, dtype=np.uint8)
+            mask[ymin:ymax, xmin:xmax] = 1
+            depth_masked = np.where(mask, depth_ds, 0)
+            depth_masked = np.clip(depth_masked, 0, self.depth_trunc)
+            depth_vis = np.clip(np.nan_to_num(depth_ds), 0, self.depth_trunc)
+            depth_norm = (depth_vis / self.depth_trunc * 255).astype(np.uint8)
+            depth_color = cv2.applyColorMap(depth_norm, cv2.COLORMAP_JET)
+            cv2.rectangle(depth_color, (xmin, ymin), (xmax, ymax), (0, 0, 255), 2)
+            self.latest_depth_vis = depth_color
+            intr = o3d.camera.PinholeCameraIntrinsic(W, H, fx, fy, cx, cy)
+            depth_o3d = o3d.geometry.Image(depth_masked)
+            pcd = o3d.geometry.PointCloud.create_from_depth_image(
+                depth_o3d, intr, depth_scale=1.0, depth_trunc=self.depth_trunc
+            )
+            pcd = pcd.voxel_down_sample(self.voxel_size)
+            if np.asarray(pcd.points).shape[0] < 3:
+                return
+            pcd.estimate_normals(
+                search_param=o3d.geometry.KDTreeSearchParamHybrid(
+                    radius=self.normal_radius, max_nn=self.normal_max_nn
+                )
+            )
+            if self.initial_pcd is None:
+                self.initial_pcd = pcd
+                rospy.loginfo("Initial ICP reference captured (ROI).")
+                return
+            reg = o3d.pipelines.registration.registration_icp(
+                pcd, self.initial_pcd,
+                max_correspondence_distance=self.icp_max_corr,
+                estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint()
+            )
+            T = reg.transformation
+            dx, dy, dz = T[0, 3], T[1, 3], T[2, 3]
+            with self.buffer_lock:
+                self.dx_buf.append(dx)
+                self.dy_buf.append(dy)
+                self.dz_buf.append(dz)
+
+            norm = float(math.sqrt(dx*dx + dy*dy + dz*dz))
+            self.pub_icp.publish(Float32(data=norm))
+        except Exception as e:
+            rospy.logwarn_throttle(1.0, f"Depth ICP failed: {e}")
+
+    # ---------------------------------------------------------------------
+    def _depth_display_loop(self):
+        cv2.namedWindow("Depth", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("Depth", 960, 720)
+        while not rospy.is_shutdown():
+            if self.latest_depth_vis is not None:
+                cv2.imshow("Depth", self.latest_depth_vis)
+                cv2.waitKey(1)
+            time.sleep(0.05)
+        cv2.destroyAllWindows()
+
+    # ---------------------------------------------------------------------
+    def update_plot(self, frame):
+        if not self.roi_received:
+            return []
+        with self.buffer_lock:
+            dx = np.array(self.dx_buf)
+            dy = np.array(self.dy_buf)
+            dz = np.array(self.dz_buf)
+            tilt = np.array(self.tilt_buf)
+        m = max(len(dx), len(dy), len(dz), len(tilt), 1)
+        x = np.arange(self.frame_index - m + 1, self.frame_index + 1)
+        def pad(a):
+            b = np.zeros(m)
+            if len(a) > 0:
+                b[-len(a):] = a
+            return b
+        dx, dy, dz, tilt = pad(dx), pad(dy), pad(dz), pad(tilt)
+        self.line_dx.set_data(x, dx)
+        self.line_dy.set_data(x, dy)
+        self.line_dz.set_data(x, dz)
+        self.line_tilt.set_data(x, tilt)
+        if self.frame_index > 1:
+            xmin = max(0, self.frame_index - self.window_len)
+            xmax = self.frame_index if xmin < self.frame_index else xmin + 1
+            self.ax_icp.set_xlim(xmin, xmax)
+            self.ax_tilt.set_xlim(xmin, xmax)
+        self.frame_index += 1
+        return [self.line_dx, self.line_dy, self.line_dz, self.line_tilt]
+
+    # ---------------------------------------------------------------------
+    def spin(self):
+        threading.Thread(target=rospy.spin, daemon=True).start()
+        plt.show()
+        cv2.destroyAllWindows()
+
+    # ---------------------------------------------------------------------
+    def _sigint_handler(self, sig, frame):
+        plt.close("all")
+        cv2.destroyAllWindows()
+        rospy.signal_shutdown("SIGINT")
+
+
+if __name__ == "__main__":
+    ImuIcpMonitor()

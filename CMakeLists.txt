@@ -46,6 +46,8 @@ catkin_install_python(PROGRAMS
   src/camera_monitor/imu_icp_monitor.py
   src/camera_monitor/camera_supervisor.py
   src/camera_monitor/roi_selector.py
+  src/camera_monitor/capture_tag_pose.py
+  src/camera_monitor/calib_cam_to_world.py
   src/robot/move_to_tag.py
   src/robot/robot_task_manager.py
   src/robot/pick_and_place.py
