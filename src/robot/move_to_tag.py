@@ -125,12 +125,33 @@ class RecalibrationServer:
                     x=0.0, y=-0.50, z=0.30,
                     rx=math.radians(90.0), ry=0.0, rz=0.0
                 )
-                if not success:
+
+                # 再キャリブ姿勢に移動できたのか確認
+                if success:
+                    rospy.loginfo("現在の姿勢を確認中...")
+                    #現在の姿勢を取得
+                    current_pose = self.arm.get_current_pose().pose
+                    rospy.loginfo(f"Current Pose: {current_pose}")
+                    rospy.loginfo("再キャリブレーション姿勢に到達しました。")
+                    rospy.loginfo("カメラキャリブレーションを実行します")
+                    # カメラキャリブレーション処理サービスの呼び出し
+                    try:
+                        recalib_client = rospy.ServiceProxy("/capture_tag_pose", Trigger)
+                        recalib_response = recalib_client()
+                        if recalib_response.success:
+                            rospy.loginfo("カメラキャリブレーションが成功しました。")
+                        else:
+                            rospy.logerr(f"カメラキャリブレーションに失敗しました: {recalib_response.message}")
+                            rospy.set_param(MOTION_LOCK_PARAM, False)
+                            return TriggerResponse(success=False, message="カメラキャリブレーションに失敗しました。")
+                    except Exception as e:
+                        rospy.logerr(f"カメラキャリブレーションサービスの呼び出しに失敗しました: {e}")
+                        rospy.set_param(MOTION_LOCK_PARAM, False)
+                        return TriggerResponse(success=False, message="カメラキャリブレーションサービスの呼び出しに失敗しました。")
+                else:
                     rospy.set_param(MOTION_LOCK_PARAM, False)
-                    return TriggerResponse(success=False, message="再キャリブレーション姿勢への移動に失敗しました。")
-
-                rospy.sleep(2.0)  # 静止状態を確保（再キャリブ実施中）
-
+                    return TriggerResponse(success=False, message="再キャリブレーション姿勢に到達できませんでした。")
+                # ホーム姿勢へ復帰
                 rospy.loginfo("ホーム姿勢へ復帰中...")
                 self.arm.stop()
                 self.arm.clear_pose_targets()
