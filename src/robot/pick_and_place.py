@@ -71,8 +71,8 @@ class PickAndPlace:
 
         # --- MoveIt初期化 ---
         self.arm = moveit_commander.MoveGroupCommander("xarm6")
-        self.arm.set_max_velocity_scaling_factor(rospy.get_param("~vel_scale", 1.0))
-        self.arm.set_max_acceleration_scaling_factor(rospy.get_param("~acc_scale", 1.0))
+        self.arm.set_max_velocity_scaling_factor(rospy.get_param("~vel_scale", 0.1))
+        self.arm.set_max_acceleration_scaling_factor(rospy.get_param("~acc_scale", 0.1))
         self.arm.set_planning_time(rospy.get_param("~planning_time", 5.0))
 
         rospy.sleep(0.5)
@@ -86,8 +86,11 @@ class PickAndPlace:
 
         # --- 動作シーケンス定義 ---
         self.sequence = rospy.get_param(
-            "~sequence", ["target1", "target2", "target1", "target3", "target4", "target3"]
+            # "~sequence", ["target1", "target2", "target1", "target3", "target4", "target3"]
+            "~sequence", ["target1", "target2"]
         )
+        #1動作ごとに1秒待機
+        self.wait_time = rospy.get_param("~wait_time_per_action", 5.0)
         # --- ピックアンドプレーススレッド起動 ---
         self.pick_thread = threading.Thread(target=self.pick_and_place_loop, daemon=True)
         self.pick_thread.start()
@@ -117,6 +120,8 @@ class PickAndPlace:
             try:
                 with self.lock:
                     rospy.set_param(MOTION_BUSY_PARAM, True)  # ← サイクル開始を通知
+                    #1動作ごとに待機
+                    rospy.sleep(self.wait_time)
                     rospy.loginfo("=== Pick & Place サイクル開始 ===")
 
                     for pose_name in self.sequence:
@@ -140,7 +145,7 @@ class PickAndPlace:
                             rospy.logwarn(f"姿勢 {pose_name} への移動に失敗しました。")
                             break
 
-                        rospy.sleep(0.1)
+                        rospy.sleep(self.wait_time)
 
                     rospy.set_param(MOTION_BUSY_PARAM, False)  # ← サイクル終了を通知
 
