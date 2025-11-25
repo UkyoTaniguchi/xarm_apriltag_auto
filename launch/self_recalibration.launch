@@ -3,10 +3,77 @@
   <rosparam file="$(find xarm_apriltag_demo)/config/roi.yaml" command="load"/>
   <rosparam file="$(find xarm_apriltag_demo)/config/recalib_poses.yaml" command="load"/>
 
-  <node pkg="xarm_apriltag_demo" type="imu_icp_monitor.py" name="imu_icp_monitor" output="screen"/>
-  <!-- <node pkg="xarm_apriltag_demo" type="camera_supervisor.py" name="camera_supervisor" output="screen"/> -->
-  <node pkg="xarm_apriltag_demo" type="roi_selector.py" name="roi_selector" output="screen"/>
+  <!-- ============================== -->
+  <!-- ★ Camera2 監視ノード + ROI selector + 世界座標変換 -->
+  <!-- ============================== -->
+  <node pkg="xarm_apriltag_demo" type="imu_icp_monitor.py" name="imu_icp_monitor_cam2" output="screen">
+    <param name="depth_topic"       value="/cam_2/depth/image_rect_raw"/>
+    <param name="camera_info_topic" value="/cam_2/depth/camera_info"/>
+    <param name="imu_topic"         value="/cam_2/imu"/>
+    <param name="roi_topic"         value="/cam_2/roi"/>
+  </node>
+
+  <node pkg="xarm_apriltag_demo" type="roi_selector.py" name="roi_selector_cam2" output="screen">
+    <param name="roi_output_topic" value="/cam_2/roi"/>
+    <param name="camera_name"      value="cam_2"/>
+  </node>
+
+  <node pkg="xarm_apriltag_demo" type="calib_cam_to_world.py" name="calib_cam2" respawn="true">
+    <param name="parent_frame" value="cam_1_color_optical_frame"/>
+    <param name="output_frame" value="cam_2_link"/>
+    <param name="tag_file" value="$(find xarm_apriltag_demo)/public/tag_2_pose.txt"/>
+    <param name="tag_id" value="2"/>
+  </node>
+
+  <!-- ============================== -->
+  <!-- ★ Camera3 監視ノード + ROI selector + 世界座標変換 -->
+  <!-- ============================== -->
+  <node pkg="xarm_apriltag_demo" type="imu_icp_monitor.py" name="imu_icp_monitor_cam3" output="screen">
+    <param name="depth_topic"       value="/cam_3/depth/image_rect_raw"/>
+    <param name="camera_info_topic" value="/cam_3/depth/camera_info"/>
+    <param name="imu_topic"         value="/cam_3/imu"/>
+    <param name="roi_topic"         value="/cam_3/roi"/>
+  </node>
+
+  <node pkg="xarm_apriltag_demo" type="roi_selector.py" name="roi_selector_cam3" output="screen">
+    <param name="roi_output_topic" value="/cam_3/roi"/>
+    <param name="camera_name"      value="cam_3"/>
+  </node>
+
+  <node pkg="xarm_apriltag_demo" type="calib_cam_to_world.py" name="calib_cam3" respawn="true">
+    <param name="parent_frame" value="cam_3_color_optical_frame"/>
+    <param name="output_frame" value="cam_3_link"/>
+    <param name="tag_file" value="$(find xarm_apriltag_demo)/public/tag_2_pose.txt"/>
+    <param name="tag_id" value="2"/>
+  </node>
+
+
+  <!-- ============================== -->
+  <!-- ★ Camera4 監視ノード + ROI selector + 世界座標変換 -->
+  <!-- ============================== -->
+  <node pkg="xarm_apriltag_demo" type="imu_icp_monitor.py" name="imu_icp_monitor_cam4" output="screen">
+    <param name="depth_topic"       value="/cam_4/depth/image_rect_raw"/>
+    <param name="camera_info_topic" value="/cam_4/depth/camera_info"/>
+    <param name="imu_topic"         value="/cam_4/imu"/>
+    <param name="roi_topic"         value="/cam_4/roi"/>
+  </node>
+
+  <node pkg="xarm_apriltag_demo" type="roi_selector.py" name="roi_selector_cam4" output="screen">
+    <param name="roi_output_topic" value="/cam_4/roi"/>
+    <param name="camera_name"      value="cam_4"/>
+  </node>
+
+  <node pkg="xarm_apriltag_demo" type="calib_cam_to_world.py" name="calib_cam4" respawn="true">
+    <param name="parent_frame" value="cam_4_color_optical_frame"/>
+    <param name="output_frame" value="cam_4_link"/>
+    <param name="tag_file" value="$(find xarm_apriltag_demo)/public/tag_3_pose.txt"/>
+    <param name="tag_id" value="3"/>
+  </node>
+
+  <!-- ============================== -->
+  <!-- ★ 既存ノード（変更なし） -->
+  <!-- ============================== -->
   <node pkg="xarm_apriltag_demo" type="move_to_tag.py" name="xarm_recalibration_server" output="screen"/>
-  <node pkg="xarm_apriltag_demo" type="pick_and_place.py" name="pick_and_place" output="screen" />
-  <node pkg="xarm_apriltag_demo" type="calib_cam_to_world.py" name="calib_cam_to_world" respawn="true" />
+  <node pkg="xarm_apriltag_demo" type="pick_and_place.py" name="pick_and_place" output="screen"/>
+
 </launch>
