@@ -41,10 +41,10 @@
   </node>
 
   <node pkg="xarm_apriltag_demo" type="calib_cam_to_world.py" name="calib_cam3" respawn="true">
-    <param name="parent_frame" value="cam_3_color_optical_frame"/>
+    <param name="parent_frame" value="cam_1_color_optical_frame"/>
     <param name="output_frame" value="cam_3_link"/>
-    <param name="tag_file" value="$(find xarm_apriltag_demo)/public/tag_2_pose.txt"/>
-    <param name="tag_id" value="2"/>
+    <param name="tag_file" value="$(find xarm_apriltag_demo)/public/tag_1_pose.txt"/>
+    <param name="tag_id" value="1"/>
   </node>
 
 
@@ -64,14 +64,14 @@
   </node>
 
   <node pkg="xarm_apriltag_demo" type="calib_cam_to_world.py" name="calib_cam4" respawn="true">
-    <param name="parent_frame" value="cam_4_color_optical_frame"/>
+    <param name="parent_frame" value="cam_1_color_optical_frame"/>
     <param name="output_frame" value="cam_4_link"/>
-    <param name="tag_file" value="$(find xarm_apriltag_demo)/public/tag_3_pose.txt"/>
-    <param name="tag_id" value="3"/>
+    <param name="tag_file" value="$(find xarm_apriltag_demo)/public/tag_0_pose.txt"/>
+    <param name="tag_id" value="0"/>
   </node>
 
   <!-- ============================== -->
-  <!-- ★ 既存ノード（変更なし） -->
+  <!-- ロボットの動作ノード -->
   <!-- ============================== -->
   <node pkg="xarm_apriltag_demo" type="move_to_tag.py" name="xarm_recalibration_server" output="screen"/>
   <node pkg="xarm_apriltag_demo" type="pick_and_place.py" name="pick_and_place" output="screen"/>
