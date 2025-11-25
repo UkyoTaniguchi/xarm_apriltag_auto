@@ -14,6 +14,7 @@ from std_msgs.msg import Empty   # ★追加
 MOTION_LOCK_PARAM = "/motion_lock"   # ← 他ノードと共有する排他パラメータ
 MOTION_BUSY_PARAM = "/motion_busy"   # ← Pick&Placeの動作中状態
 
+
 def load_poses_from_yaml(package_name: str, rel_path: str, root_key: str):
     """
     YAMLを読み込んで姿勢dictを返す。
@@ -41,6 +42,7 @@ def load_poses_from_yaml(package_name: str, rel_path: str, root_key: str):
     raw_dict = data[root_key]
     poses = {name: make_pose(values) for name, values in raw_dict.items()}
     return poses
+
 
 def make_pose(values):
     """7要素[x,y,z,qx,qy,qz,qw]のリストからgeometry_msgs/Poseを生成"""
@@ -74,8 +76,8 @@ class RecalibrationServer:
 
         # --- MoveIt初期化 ---
         self.arm = moveit_commander.MoveGroupCommander("xarm6")
-        self.arm.set_max_velocity_scaling_factor(rospy.get_param("~vel_scale", 1.0))
-        self.arm.set_max_acceleration_scaling_factor(rospy.get_param("~acc_scale", 1.0))
+        self.arm.set_max_velocity_scaling_factor(rospy.get_param("~vel_scale", 0.1))
+        self.arm.set_max_acceleration_scaling_factor(rospy.get_param("~acc_scale", 0.1))
         self.arm.set_planning_time(rospy.get_param("~planning_time", 5.0))
 
         rospy.sleep(0.5)
@@ -124,12 +126,11 @@ class RecalibrationServer:
                 rospy.loginfo("=== 再キャリブレーション開始 ===")
 
                 # 再キャリブ姿勢へ移動
-                success = self.move_to_xyzrpy(
-                    x=0.0, y=-0.50, z=0.30,
-                    rx=math.radians(90.0), ry=0.0, rz=0.0
-                )
+                pose = self.poses["pose"]
+                self.arm.set_pose_target(pose)
+                success = self.arm.go(wait=True)
 
-                # 再キャリブ姿勢に移動できたのか確認
+                # 再キャリブレーション姿勢に移動できたのか確認
                 if success:
                     rospy.loginfo("現在の姿勢を確認中...")
                     #現在の姿勢を取得
@@ -159,6 +160,7 @@ class RecalibrationServer:
                 else:
                     rospy.set_param(MOTION_LOCK_PARAM, False)
                     return TriggerResponse(success=False, message="再キャリブレーション姿勢に到達できませんでした。")
+
                 # ホーム姿勢へ復帰
                 rospy.loginfo("ホーム姿勢へ復帰中...")
                 self.arm.stop()
