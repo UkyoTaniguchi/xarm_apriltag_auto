@@ -25,7 +25,7 @@
     <arg name="unite_imu_method" value="linear_interpolation"/>
   </include>
 
-  <!-- <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
     <arg name="camera" value="cam_3" />
     <arg name="serial_no" value="243122070422" />
     <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
@@ -41,7 +41,7 @@
     <arg name="enable_gyro"  value="true"/>
     <arg name="enable_accel" value="true"/>
     <arg name="unite_imu_method" value="linear_interpolation"/>
-  </include> -->
+  </include>
 
   <!-- ロボットとRealSenseの起動（シミュレーション） -->
   <include file="$(find xarm6_moveit_config)/launch/demo.launch">
