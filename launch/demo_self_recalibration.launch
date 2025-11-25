@@ -76,5 +76,8 @@
     <arg name="camera_name" value="/cam_1/color" />
     <arg name="image_topic" value="image_raw" />
   </include>
+
+  <!-- Apriltag 姿勢更新ノード -->
+  <node pkg ="xarm_apriltag_demo" type="capture_tag_pose.py" name="apriltag_pose_updater" output="screen" />
 </launch>
 
