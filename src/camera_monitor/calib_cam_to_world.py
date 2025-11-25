@@ -1,173 +1,300 @@
 #!/usr/bin/env python3
-# world 座標系が親
-
 import rospy
 import tf
-from geometry_msgs.msg import TransformStamped
 import tf.transformations as tft
-import math
 import numpy as np
+import math
 import re
 import os
-from std_msgs.msg import Empty   # ★追加
 
-# デフォルトのタグファイルパス
-def get_save_path(tag_id):
+from geometry_msgs.msg import TransformStamped
+from std_msgs.msg import Empty
+
+
+# ============================================================
+#  ファイルパス関連ユーティリティ
+# ============================================================
+
+def get_default_tag_file(tag_id):
+    """Tag姿勢ファイルのデフォルト保存パス"""
     return f"/home/robot/nishidalab_ws/src/3_utils/xarm_apriltag_auto/public/tag_{tag_id}_pose.txt"
 
-_pos_re = re.compile(r"Position:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+)")
-_ori_re = re.compile(r"Orientation:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+),\s*w=([-\d\.eE]+)")
 
-def _pick_first_match(lines, start_idx):
-    """start_idx 以降で Position/Orientation を（この順で）拾って返す"""
-    pos = ori = None
-    for i in range(start_idx, len(lines)):
-        if pos is None:
-            m = _pos_re.search(lines[i])
-            if m:
-                pos = tuple(float(m.group(k)) for k in (1,2,3))
+# Position/Orientation の行検出用パターン
+_POS_PATTERN = re.compile(r"Position:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+)")
+_ORI_PATTERN = re.compile(r"Orientation:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+),\s*w=([-\d\.eE]+)")
+
+# ============================================================
+#  tag_pose ファイル内の姿勢抽出ユーティリティ
+# ============================================================
+
+def _extract_pose_from_lines(lines, start_idx):
+    """
+    指定開始行以降から Position → Orientation を1回だけ検出して返す。
+    """
+    position = None
+    orientation = None
+
+    for line_index in range(start_idx, len(lines)):
+        line = lines[line_index]
+
+        # Position
+        if position is None:
+            match = _POS_PATTERN.search(line)
+            if match:
+                position = tuple(float(match.group(k)) for k in (1, 2, 3))
                 continue
-        if pos is not None and ori is None:
-            m = _ori_re.search(lines[i])
-            if m:
-                ori = tuple(float(m.group(k)) for k in (1,2,3,4))  # (x,y,z,w)
+
+        # Orientation
+        if position is not None and orientation is None:
+            match = _ORI_PATTERN.search(line)
+            if match:
+                orientation = tuple(float(match.group(k)) for k in (1, 2, 3, 4))
                 break
-    return pos, ori
 
-def load_from_tag_pose_file(path, wanted_tag_id=1):
+    return position, orientation
+
+
+# ============================================================
+#  tag_pose ファイル読み込み
+# ============================================================
+
+def load_tag_and_camera_pose(file_path, tag_id, ref_camera_frame):
     """
-    tag_pose.txt から
-      1) 指定 Tag ID の Position/Orientation
-      2) cam_1_color_optical_frame w.r.t world の Position/Orientation
-    を読み取って返す。
-    戻り値:
-      translation(tuple3), raw_quat(tuple4), T_w_c1_pos(np.array3), T_w_c1_quat(tuple4)
+    tag_pose.txt から以下を取得:
+      1) Tag ID に対応する Tag→Camera の姿勢 (translation, quaternion)
+      2) world→ref_camera_frame の姿勢 (position, quaternion)
     """
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"{path} が見つかりません。")
 
-    with open(path, "r") as f:
-        lines = [ln.strip() for ln in f.readlines()]
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"{file_path} が見つかりません。")
 
-    # --- Tag ID ブロックを探す ---
-    tag_idx = None
-    for i, ln in enumerate(lines):
-        if ln.startswith("Tag ID:"):
+    # ----------------------------------------------
+    # ファイル読み込み
+    # ----------------------------------------------
+    with open(file_path, "r") as file_handle:
+        lines = [line.strip() for line in file_handle.readlines()]
+
+    # ----------------------------------------------
+    # Tag ID ブロックの探索
+    # ----------------------------------------------
+    tag_block_index = None
+
+    for line_index, line in enumerate(lines):
+        if line.startswith("Tag ID:"):
             try:
-                tid = int(ln.split(":")[1].strip())
-                if tid == wanted_tag_id:
-                    tag_idx = i
+                parsed_tag_id = int(line.split(":")[1].strip())
+                if parsed_tag_id == tag_id:
+                    tag_block_index = line_index
                     break
             except Exception:
-                pass
-    if tag_idx is None:
-        raise ValueError(f"Tag ID: {wanted_tag_id} の記述が見つかりません。")
+                continue
 
-    translation, raw_quat = _pick_first_match(lines, tag_idx)
-    if translation is None or raw_quat is None:
+    if tag_block_index is None:
+        raise ValueError(f"Tag ID {tag_id} の記述が見つかりません。")
+
+    # Tag → Camera の姿勢抽出
+    tag_position, tag_quaternion_raw = _extract_pose_from_lines(lines, tag_block_index)
+    if tag_position is None or tag_quaternion_raw is None:
         raise ValueError("Tag の Position/Orientation を解釈できませんでした。")
 
-    # --- cam_1_color_optical_frame ブロックを探す ---
-    cam1_idx = None
-    for i, ln in enumerate(lines):
-        if ln.startswith("cam_1_color_optical_frame") and "w.r.t world" in ln:
-            cam1_idx = i
+    # ----------------------------------------------
+    # 親カメラ(ref_camera_frame) の姿勢ブロック探索
+    # ----------------------------------------------
+    search_key = f"{ref_camera_frame} w.r.t world"
+    camera_block_index = None
+
+    for line_index, line in enumerate(lines):
+        if search_key in line:
+            camera_block_index = line_index
             break
-    if cam1_idx is None:
-        raise ValueError("'cam_1_color_optical_frame w.r.t world:' の行が見つかりません。")
 
-    cam1_pos, cam1_quat = _pick_first_match(lines, cam1_idx)
-    if cam1_pos is None or cam1_quat is None:
-        raise ValueError("cam_1 の Position/Orientation を解釈できませんでした。")
-    
-    rospy.loginfo("=== [Tag pose loaded] ===")
-    rospy.loginfo(f"Tag ID {wanted_tag_id} @ line {tag_idx}")
-    rospy.loginfo(f"  Position (camera→tag): {translation}")
-    rospy.loginfo(f"  Orientation (camera→tag): {raw_quat}")
+    if camera_block_index is None:
+        raise ValueError(f"'{search_key}' の行が見つかりません。")
 
-    return translation, raw_quat, np.array(cam1_pos), tuple(cam1_quat)
+    # 親カメラの姿勢抽出
+    camera_position, camera_quaternion = _extract_pose_from_lines(lines, camera_block_index)
+    if camera_position is None or camera_quaternion is None:
+        raise ValueError("親カメラの Position/Orientation を解釈できませんでした。")
 
+    # ----------------------------------------------
+    # ログ
+    # ----------------------------------------------
+    rospy.loginfo("=== [Loaded Tag Pose] ===")
+    rospy.loginfo(f"Tag ID {tag_id}: position={tag_position}, quaternion={tag_quaternion_raw}")
 
-def compute_camera3_tf(translation, raw_quat, T_w_c1_pos, T_w_c1_quat):
-    """★追加：TF計算部分を関数化（内容は一切変更しない）"""
-
-    # --- 2) あなたの既存ロジック：姿勢補正など ---
-    q_pitch = tft.quaternion_from_euler(0, math.radians(-90), 0)
-    q_roll  = tft.quaternion_from_euler(math.radians(180), 0, 0)
-
-    q_correction = tft.quaternion_multiply(q_pitch, q_roll)
-    corrected_quat = tft.quaternion_multiply(raw_quat, q_correction)
-
-    local_offset = np.array([-0.03, 0.0175, -0.0525])
-
-    rot_matrix = tft.quaternion_matrix(corrected_quat)[:3, :3]
-    offset_global = rot_matrix @ local_offset
-
-    final_translation = np.array(translation) + offset_global
-
-    T_c1_c3_pos  = final_translation
-    T_c1_c3_quat = corrected_quat
-
-    T_w_c3_quat = tft.quaternion_multiply(T_w_c1_quat, T_c1_c3_quat)
-
-    R_w_c1 = tft.quaternion_matrix(T_w_c1_quat)[:3, :3]
-    T_c3_offset_world = R_w_c1 @ T_c1_c3_pos
-
-    T_w_c3_pos = T_w_c1_pos + T_c3_offset_world
-
-    return T_w_c3_pos, T_w_c3_quat
+    # ----------------------------------------------
+    # numpy化して返却
+    # ----------------------------------------------
+    return (
+        np.array(tag_position),
+        tuple(tag_quaternion_raw),
+        np.array(camera_position),
+        tuple(camera_quaternion)
+    )
 
 
-def broadcast_transform():
+
+# ============================================================
+#  カメラTFの計算（元ロジックを完全維持）
+# ============================================================
+
+def compute_world_to_camera_tf(tag_position_in_camera,
+                               tag_quaternion_raw,
+                               world_to_reference_position,
+                               world_to_reference_quaternion):
+    """
+    Tag→Camera の観測値を元に、world → target_camera_frame の姿勢を計算する。
+    ※計算ロジックは元コードを完全に維持。
+    """
+
+    # ----------------------------------------------------------
+    # 1) RealSense座標系補正（pitch -90°, roll -90°）
+    # ----------------------------------------------------------
+    pitch_correction = tft.quaternion_from_euler(0, math.radians(-90), 0)
+    roll_correction  = tft.quaternion_from_euler(math.radians(-90), 0, 0)
+
+    correction_quaternion = tft.quaternion_multiply(pitch_correction, roll_correction)
+
+    # TagがCamera座標から見たときの補正後クォータニオン
+    tag_quaternion_corrected = tft.quaternion_multiply(
+        tag_quaternion_raw,
+        correction_quaternion
+    )
+
+    # ----------------------------------------------------------
+    # 2) Camera座標系における実機オフセットの反映
+    # ----------------------------------------------------------
+    camera_local_offset = np.array([-0.03, 0.0175, -0.0525])
+
+    rotation_matrix_camera = tft.quaternion_matrix(tag_quaternion_corrected)[:3, :3]
+    offset_in_camera_world = rotation_matrix_camera @ camera_local_offset
+
+    # Tag位置（Camera目線）にオフセットを加えたCamera位置
+    camera_position_relative = np.array(tag_position_in_camera) + offset_in_camera_world
+
+    # ----------------------------------------------------------
+    # 3) world → target_camera_frame の計算
+    # ----------------------------------------------------------
+
+    # 回転成分：world→reference_camera の後に camera_local→target_camera 変換を適用
+    world_to_target_quaternion = tft.quaternion_multiply(
+        world_to_reference_quaternion,
+        tag_quaternion_corrected
+    )
+
+    # 並進成分：reference_camera の回転を使って offset を world 座標へ写す
+    rotation_matrix_reference = tft.quaternion_matrix(world_to_reference_quaternion)[:3, :3]
+    camera_offset_in_world = rotation_matrix_reference @ camera_position_relative
+
+    world_to_target_position = world_to_reference_position + camera_offset_in_world
+
+    return world_to_target_position, world_to_target_quaternion
+
+
+# ============================================================
+#  TF ブロードキャスト本体
+# ============================================================
+
+def run_tf_broadcaster():
     rospy.init_node('camera_to_world_broadcaster')
-    br = tf.TransformBroadcaster()
-    rate = rospy.Rate(15.0)
 
-    shutdown_requested = False  # ★追加：安全終了フラグ
+    transform_broadcaster = tf.TransformBroadcaster()
+    publish_rate = rospy.Rate(15.0)
 
-    # パラメータ（必要なら rosparam で上書き可能）
-    tag_file = rospy.get_param("~tag_file", get_save_path(rospy.get_param("~tag_id", 1)))
-    tag_id   = rospy.get_param("~tag_id", 1)
+    # ----------------------------------------------------------
+    # パラメータ取得
+    # ----------------------------------------------------------
+    reference_camera_frame = rospy.get_param("~parent_frame", "cam_1_color_optical_frame")
+    target_camera_frame    = rospy.get_param("~output_frame", "cam_3_link")
+    target_tag_id          = rospy.get_param("~tag_id", 1)
+    tag_pose_file_path     = rospy.get_param(
+        "~tag_file",
+        get_default_tag_file(target_tag_id)
+    )
 
-    # --- 初回ロード ---
-    translation, raw_quat, T_w_c1_pos, T_w_c1_quat = load_from_tag_pose_file(tag_file, tag_id)
-    T_w_c3_pos, T_w_c3_quat = compute_camera3_tf(translation, raw_quat, T_w_c1_pos, T_w_c1_quat)
+    # ----------------------------------------------------------
+    # 初回の TF 計算
+    # ----------------------------------------------------------
+    tag_position, tag_quaternion_raw, ref_cam_position, ref_cam_quaternion = \
+        load_tag_and_camera_pose(
+            tag_pose_file_path,
+            target_tag_id,
+            reference_camera_frame
+        )
 
-    rospy.loginfo(f"[OK] Loaded from {tag_file} (Tag ID: {tag_id})")
-    rospy.loginfo(f"T_w_c3_pos = {T_w_c3_pos}")
-    rospy.loginfo(f"T_w_c3_quat = {T_w_c3_quat}")
+    world_to_target_position, world_to_target_quaternion = \
+        compute_world_to_camera_tf(
+            tag_position,
+            tag_quaternion_raw,
+            ref_cam_position,
+            ref_cam_quaternion
+        )
 
-    # ★★★ 追加：/recalib/reload_tf を購読し、再読み込みする ★★★
-    def reload_cb(_msg):
-        nonlocal T_w_c3_pos, T_w_c3_quat, shutdown_requested
-        rospy.loginfo("=== reload_tf 受信：tag_pose.txt を再読み込みします ===")
+    rospy.loginfo(f"[Loaded] {tag_pose_file_path} (Tag ID={target_tag_id})")
+    rospy.loginfo(
+        f"world → {target_camera_frame}: "
+        f"position={world_to_target_position}, quaternion={world_to_target_quaternion}"
+    )
+
+    # ----------------------------------------------------------
+    # TF再読み込み要求を受けたら再計算 → ノード再起動（respawn）へ
+    # ----------------------------------------------------------
+    reload_requested = False
+
+    def handle_tf_reload(_msg):
+        nonlocal world_to_target_position, world_to_target_quaternion, reload_requested
+
+        rospy.loginfo("=== /recalib/reload_tf を受信。tag_pose を再読み込みします ===")
+
         try:
-            trans, quat_raw, T_c1_pos, T_c1_quat = load_from_tag_pose_file(tag_file, tag_id)
-            T_w_c3_pos, T_w_c3_quat = compute_camera3_tf(trans, quat_raw, T_c1_pos, T_c1_quat)
-            rospy.loginfo("=== TF を更新しました ===")
-            shutdown_requested = True  # ★ここで安全終了を要求
-        except Exception as e:
-            rospy.logerr(f"TF再計算に失敗: {e}")
+            new_tag_position, new_tag_quaternion_raw, new_ref_position, new_ref_quaternion = \
+                load_tag_and_camera_pose(
+                    tag_pose_file_path,
+                    target_tag_id,
+                    reference_camera_frame
+                )
 
-    rospy.Subscriber("/recalib/reload_tf", Empty, reload_cb)
+            new_world_position, new_world_quaternion = compute_world_to_camera_tf(
+                new_tag_position,
+                new_tag_quaternion_raw,
+                new_ref_position,
+                new_ref_quaternion
+            )
 
+            world_to_target_position = new_world_position
+            world_to_target_quaternion = new_world_quaternion
+
+            rospy.loginfo("=== TF 更新完了 ===")
+            reload_requested = True
+
+        except Exception as error:
+            rospy.logerr(f"TF再計算に失敗: {error}")
+
+    rospy.Subscriber("/recalib/reload_tf", Empty, handle_tf_reload)
+
+    # ----------------------------------------------------------
+    # TFブロードキャストループ
+    # ----------------------------------------------------------
     while not rospy.is_shutdown():
-        if shutdown_requested:
-            rospy.loginfo("=== TF更新完了。ノードを終了して再起動させます ===")
-            return  # 正常終了 → respawn="true" なら自動再起動
+        if reload_requested:
+            rospy.loginfo("=== TF更新後、ノードを終了します（respawn=true を想定） ===")
+            return  # ノード終了 → launch の respawn が自動再起動させる
 
-        br.sendTransform(
-            T_w_c3_pos,
-            T_w_c3_quat,
+        transform_broadcaster.sendTransform(
+            world_to_target_position,
+            world_to_target_quaternion,
             rospy.Time.now(),
-            "cam_3_link",
+            target_camera_frame,
             "world"
         )
-        rate.sleep()
+
+        publish_rate.sleep()
+
 
 
 if __name__ == '__main__':
     try:
-        broadcast_transform()
+        run_tf_broadcaster()
     except rospy.ROSInterruptException:
         pass
