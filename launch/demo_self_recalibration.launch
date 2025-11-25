@@ -1,16 +1,83 @@
 <!-- 自己再キャリブレーション動作を仮想環境で試すlaunchファイル -->
 <launch>
+  <!-- 引数 -->
+  <arg name="enable_pointcloud" default="true" />
+  <arg name="robot_ip" default="192.168.1.234" />
+  <arg name="add_realsense_d435i" default="true" />
   <!-- RealSense 実機 -->
-  <group ns="camera">
-    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
-      <arg name="enable_gyro"  value="true"/>
-      <arg name="enable_accel" value="true"/>
-      <arg name="unite_imu_method" value="linear_interpolation"/>
-    </include>
-  </group>
-
-  <!-- MoveIt -->
-  <include file="$(find xarm6_moveit_config)/launch/demo.launch">
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="cam_1" />
+    <arg name="serial_no" value="819312073416" />
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
+    <arg name="enable_gyro"  value="true"/>
+    <arg name="enable_accel" value="true"/>
+    <arg name="unite_imu_method" value="linear_interpolation"/>
   </include>
+  
+  <!-- tag2が取り付けられているカメラ -->
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="cam_2" />
+    <!-- <arg name="serial_no" value="344322074094" /> -->
+    <arg name="serial_no" value="337122071608" />
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
+    <arg name="enable_gyro"  value="true"/>
+    <arg name="enable_accel" value="true"/>
+    <arg name="unite_imu_method" value="linear_interpolation"/>
+  </include>
+
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="cam_3" />
+    <arg name="serial_no" value="243122070422" />
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
+    <arg name="enable_gyro"  value="true"/>
+    <arg name="enable_accel" value="true"/>
+    <arg name="unite_imu_method" value="linear_interpolation"/>
+  </include>
+
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="camera" value="cam_4" />
+    <arg name="serial_no" value="344322074094" />
+    <arg name="enable_pointcloud" value="$(arg enable_pointcloud)" />
+    <arg name="enable_gyro"  value="true"/>
+    <arg name="enable_accel" value="true"/>
+    <arg name="unite_imu_method" value="linear_interpolation"/>
+  </include>
+
+  <!-- ロボットとRealSenseの起動（シミュレーション） -->
+  <include file="$(find xarm6_moveit_config)/launch/demo.launch">
+    <arg name="add_realsense_d435i" value="$(arg add_realsense_d435i)" />
+  </include>
+
+  <!-- 実機のときはこちらを有効化 -->
+  <!-- <include file="$(find xarm6_gripper_moveit_config)/launch/realMove_exec.launch">
+    <arg name="robot_ip" value="$(arg robot_ip)" />
+    <arg name="add_realsense_d435i" value="$(arg add_realsense_d435i)" />
+  </include> -->
+
+
+  <!-- link_eef -> link_eef_fixed を rpy(度)＋xyz(m)で補正配信するノード -->
+  <node pkg="xarm_apriltag_demo" type="eef_to_eef_fixed_broadcaster.py" name="eef_correction_broadcaster" output="screen">
+    <param name="parent_frame" value="link_eef"/>
+    <param name="child_frame"  value="link_eef_fixed"/>
+    <rosparam param="xyz">[0.0, 0.0, 0.0]</rosparam>
+    <rosparam param="rpy_deg">[0.0, 0.0, 3.000916]</rosparam> 
+    <param name="rate"    value="30"/>
+  </node>
+  
+  <!-- RealSense TF broadcaster ノードの追加 -->
+  <node name="camera_to_xarm6eef_broadcaster"
+        pkg="xarm_apriltag_demo"
+        type="camera_to_xarm6eef_broadcaster.py"
+        output="screen"
+        cwd="node" />
+
+  <!-- AprilTag 認識ノード -->
+  <include file="$(find apriltag_ros)/launch/continuous_detection.launch">
+    <arg name="camera_name" value="/cam_1/color" />
+    <arg name="image_topic" value="image_raw" />
+  </include>
+
+  <!-- Apriltag 姿勢更新ノード -->
+  <node pkg ="xarm_apriltag_demo" type="capture_tag_pose.py" name="apriltag_pose_updater" output="screen" />
 </launch>
 
