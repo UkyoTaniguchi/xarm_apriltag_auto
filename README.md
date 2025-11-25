@@ -25,7 +25,7 @@ AprilTagを用いた外部キャリブレーションにも対応。
 ```bash
 # クローン
 git clone git@github.com:riku030502/xarm_apriltag_auto.git
-cd xarm_apriltag_auto
+cd <your_ws>
 catkin build
 source devel/setup.bash
 ```
@@ -36,18 +36,19 @@ source devel/setup.bash
 ```bash
 rs-enumerate-devices -S
 ```
-出力された番号を`boot_multi_cam.launch`に記載  
+出力された番号を`demo_self_recalibration.launch`に記載  
+ハンドアイカメラはcam1に固定してください．  
 ### 2.キャリブレーション
 以下のコマンドを実行しキャリブレーションを行ってください  
-xarm6とハンドアイカメラの起動  
+xarm6とハンドアイカメラ，周囲固定カメラ，Rvizの起動  
 ```bash
-roslaunch xarm_apriltag_demo system_with_tag.launch
+roslaunch xarm_apriltag_demo demo_self=recalibration.launch.py
 ```
-キャリブレーション実行  
+タスク開始＆カメラ監視開始
 ```bash
 roslaunch xarm_arpriltag_demo save_multi_tag_pose.launch
 ```
-キャリブレーションを行った結果が`public/tag_pose.txt`に保存されます  
+ENTERを押すとタスクが実行される．
 
 ### 3.Realsenseの同時起動
 ```bash
