@@ -31,6 +31,29 @@ class RoiStaticFixer:
 
         self.roi_publisher = rospy.Publisher(self.roi_topic_out, Float32MultiArray, queue_size=1)
 
+        # ★追加：初期ROI（例: "0.3 0.3 0.6 0.6"）
+        initial_roi_str = rospy.get_param("~initial_roi", None)
+
+        # 初期ROIが与えられていれば即適用
+        if initial_roi_str is not None:
+            parts = initial_roi_str.split()
+            if len(parts) == 4:
+                xmin, ymin, xmax, ymax = map(float, parts)
+                roi_msg = Float32MultiArray(data=[xmin, ymin, xmax, ymax])
+
+                # ★subscriber を待つ
+                while self.roi_publisher.get_num_connections() == 0 and not rospy.is_shutdown():
+                    rospy.loginfo("Waiting subscriber for /monitor/roi ...")
+                    rospy.sleep(0.1)
+
+                self.roi_publisher.publish(roi_msg)
+                rospy.loginfo(
+                    f"Initial ROI applied (normalized): "
+                    f"{xmin:.3f}, {ymin:.3f}, {xmax:.3f}, {ymax:.3f}"
+                )
+                self.is_roi_fixed = True
+                self.collected_frames.clear()
+
         rospy.Subscriber(self.depth_topic_in, Image, self._depth_callback)
 
         rospy.loginfo(f"Collecting depth frames for {self.collection_duration:.1f} sec...")
@@ -131,6 +154,7 @@ class RoiStaticFixer:
         # 状態更新
         self.is_roi_fixed = True
         self.collected_frames.clear()
+
 
 if __name__ == "__main__":
     RoiStaticFixer()

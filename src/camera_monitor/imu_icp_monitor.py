@@ -102,6 +102,9 @@ class ImuIcpMonitor:
         self.buffer_lock = Lock()
         self.bridge = CvBridge()
 
+        # どのカメラかを示す名前（例: "cam_2"）
+        self.camera_name = rospy.get_param("~camera_name", "")
+
         # --------------------------------------------------
         # Publisher
         # --------------------------------------------------
@@ -131,7 +134,7 @@ class ImuIcpMonitor:
         rospy.loginfo("IMU+ICP Monitor initialized.")
 
         # Depth Viewer
-        # threading.Thread(target=self._depth_view_loop, daemon=True).start()
+        threading.Thread(target=self._depth_view_loop, daemon=True).start()
 
         # グラフ初期化
         self._init_plot()
@@ -366,6 +369,11 @@ class ImuIcpMonitor:
 
     def _call_recalib_service(self):
         try:
+            # どのカメラがトリガしたかをパラメータで共有
+            if self.camera_name:
+                rospy.set_param("/recalibration/target_camera", self.camera_name)
+                rospy.loginfo(f"Set /recalibration/target_camera = {self.camera_name}")
+
             rospy.loginfo("Calling /recalibration/run ...")
             res = self.recalib_client()
             if res.success:

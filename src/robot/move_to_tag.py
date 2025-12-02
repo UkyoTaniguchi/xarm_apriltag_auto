@@ -18,6 +18,9 @@ from std_msgs.msg import Empty
 MOTION_LOCK_PARAM = "/motion_lock"     # Pick&Place ノードに「動くな」と指示する
 MOTION_BUSY_PARAM = "/motion_busy"     # Pick&Place ノードの動作中フラグ
 
+# どのカメラが再キャリブレーションを要求したかを示すパラメータ
+TARGET_CAMERA_PARAM = "/recalibration/target_camera"
+
 
 # =========================================================
 # YAML Utility
@@ -150,6 +153,20 @@ class RecalibrationServer:
         if self.is_processing:
             return TriggerResponse(success=False, message="既に再キャリブレーション処理中です。")
 
+        # どのカメラから要求が来たか取得（なければ None）
+        target_camera = None
+        try:
+            target_camera = rospy.get_param(TARGET_CAMERA_PARAM)
+        except KeyError:
+            target_camera = None
+        except Exception:
+            target_camera = None
+
+        if target_camera:
+            rospy.loginfo(f"Recalibration requested for camera: {target_camera}")
+        else:
+            rospy.loginfo("Recalibration requested (camera unspecified).")
+
         # -----------------------------------------------------
         # Pick&Place ノードへ「動くな」指示
         # -----------------------------------------------------
@@ -177,7 +194,20 @@ class RecalibrationServer:
                 # -----------------------------------------------------
                 # 再キャリブ姿勢へ移動
                 # -----------------------------------------------------
-                recalib_pose = self.pose_table["pose"]
+                pose_key = None
+                if target_camera and target_camera in self.pose_table:
+                    pose_key = target_camera
+                elif "pose" in self.pose_table:
+                    pose_key = "pose"
+                else:
+                    # 使えるキーがない場合はエラー
+                    keys = ", ".join(self.pose_table.keys())
+                    msg = f"利用可能な再キャリブ姿勢が見つかりません (keys: {keys})"
+                    rospy.logerr(msg)
+                    return TriggerResponse(success=False, message=msg)
+
+                recalib_pose = self.pose_table[pose_key]
+                rospy.loginfo(f"Using recalibration pose key: {pose_key}")
                 self.arm.set_pose_target(recalib_pose)
                 moved = self.arm.go(wait=True)
 
