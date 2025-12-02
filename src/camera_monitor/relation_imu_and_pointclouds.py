@@ -121,10 +121,10 @@ class SimpleTiltRMSE:
     def _run_theory(self, points, msg):
         rotated = (self.rot @ points.T).T
         disp = np.linalg.norm(rotated - points, axis=1)
-        rmse = np.sqrt(np.mean(disp ** 2))
+        self.rmse = np.sqrt(np.mean(disp ** 2))
 
         rospy.loginfo("[THEORY] tilt=%.2f deg | RMSE=%.6f m",
-                      self.tilt_deg, rmse)
+                      self.tilt_deg, self.rmse)
 
         self.publish(rotated, msg.header.frame_id)
 
@@ -166,15 +166,15 @@ class SimpleTiltRMSE:
             dists.append(math.sqrt(d[0]))
 
         dists = np.array(dists)
-        rmse = float(np.sqrt(np.mean(dists ** 2)))
+        self.rmse = float(np.sqrt(np.mean(dists ** 2)))
         mean_d = float(np.mean(dists))
         max_d = float(np.max(dists))
 
         # tilt_deg はそのまま「IMU_diff」として解釈してよい
-        imu_diff = self.tilt_deg
+        self.imu_diff = self.tilt_deg
 
         rospy.loginfo("[ICP] IMU_diff=%.2f deg | RMSE=%.4f | mean=%.4f | max=%.4f",
-                      imu_diff, rmse, mean_d, max_d)
+                      self.imu_diff, self.rmse, mean_d, max_d)
 
         # 4. 現在の点群を赤で表示
         self.publish(points, msg.header.frame_id)
@@ -200,6 +200,42 @@ class SimpleTiltRMSE:
 
         pc2_msg = pc2.create_cloud(header, fields, pts)
         self.pub_rot.publish(pc2_msg)
+
+        # imuとrsmeの値のグラフ化
+        # theoryモードでは不要なのでicpモードのときのみ実行
+        if self.mode == "icp":
+            self.plot_graph(self.imu_diff, self.rmse)
+        else:
+            self.plot_graph(self.tilt_deg, self.rmse)
+
+    def plot_graph(self, imu_diff, rmse):
+        # まだ figure を作っていない場合のみ作成
+        if not hasattr(self, 'fig'):
+            import matplotlib.pyplot as plt
+            self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(8, 6))
+            plt.ion()
+            plt.show()
+
+            self.imu_hist = []
+            self.rmse_hist = []
+
+        self.imu_hist.append(imu_diff)
+        self.rmse_hist.append(rmse)
+
+        # 描画
+        self.ax1.cla()
+        self.ax2.cla()
+
+        self.ax1.plot(self.imu_hist, label='IMU diff (deg)')
+        self.ax1.set_ylabel("IMU diff [deg]")
+        self.ax1.legend()
+
+        self.ax2.plot(self.rmse_hist, label='RMSE (m)')
+        self.ax2.set_ylabel("RMSE [m]")
+        self.ax2.legend()
+
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
 
 
 if __name__ == "__main__":
