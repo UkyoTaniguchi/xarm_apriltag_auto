@@ -25,7 +25,7 @@
   </include>
 
   <!-- ===== タグの位置・姿勢を保存するノード ===== -->
-  <node pkg="xarm_apriltag_demo"
+  <node pkg="xarm_apriltag_auto"
         type="save_multi_tag_pose.py"
         name="save_multi_tag_pose"
         output="screen">

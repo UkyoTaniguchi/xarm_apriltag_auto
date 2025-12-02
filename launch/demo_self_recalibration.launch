@@ -56,7 +56,7 @@
 
 
   <!-- link_eef -> link_eef_fixed を rpy(度)＋xyz(m)で補正配信するノード -->
-  <node pkg="xarm_apriltag_demo" type="eef_to_eef_fixed_broadcaster.py" name="eef_correction_broadcaster" output="screen">
+  <node pkg="xarm_apriltag_auto" type="eef_to_eef_fixed_broadcaster.py" name="eef_correction_broadcaster" output="screen">
     <param name="parent_frame" value="link_eef"/>
     <param name="child_frame"  value="link_eef_fixed"/>
     <rosparam param="xyz">[0.0, 0.0, 0.0]</rosparam>
@@ -66,7 +66,7 @@
   
   <!-- RealSense TF broadcaster ノードの追加 -->
   <node name="camera_to_xarm6eef_broadcaster"
-        pkg="xarm_apriltag_demo"
+        pkg="xarm_apriltag_auto"
         type="camera_to_xarm6eef_broadcaster.py"
         output="screen"
         cwd="node" />
@@ -78,6 +78,6 @@
   </include>
 
   <!-- Apriltag 姿勢更新ノード -->
-  <node pkg ="xarm_apriltag_demo" type="capture_tag_pose.py" name="apriltag_pose_updater" output="screen" />
+  <node pkg ="xarm_apriltag_auto" type="capture_tag_pose.py" name="apriltag_pose_updater" output="screen" />
 </launch>
 

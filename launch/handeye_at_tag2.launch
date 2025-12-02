@@ -12,7 +12,7 @@
   </include>
 
   <!-- tag_1 に camera_link を固定で設置する静的TFブロードキャスト -->
-  <node pkg="xarm_apriltag_demo"
+  <node pkg="xarm_apriltag_auto"
         type="handeye_to_tag2_broadcast.py"
         name="static_camera4_tf"
         output="screen" />

@@ -13,7 +13,7 @@ import numpy as np
 from tf.transformations import quaternion_matrix, quaternion_multiply, translation_matrix, concatenate_matrices, inverse_matrix
 import geometry_msgs.msg
 
-TAG_FILE_DEFAULT = "/home/ukyo/catkin_ws/src/xarm_apriltag_demo/public/tag_pose.txt"
+TAG_FILE_DEFAULT = "/home/ukyo/catkin_ws/src/xarm_apriltag_auto/public/tag_pose.txt"
 
 _pos_re = re.compile(r"Position:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+)")
 _ori_re = re.compile(r"Orientation:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+),\s*w=([-\d\.eE]+)")

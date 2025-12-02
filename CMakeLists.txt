@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(xarm_apriltag_demo)
+project(xarm_apriltag_auto)
 
 ## ==============================
 ## === 必要パッケージの検出 ===

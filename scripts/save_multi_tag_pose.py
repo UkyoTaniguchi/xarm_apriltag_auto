@@ -69,7 +69,7 @@ def save_tag_and_camera_pose(detections_msg):
 
     # --- ファイル保存 ---
     rospack = rospkg.RosPack()
-    pkg_path = rospack.get_path("xarm_apriltag_demo")  # ← 実際のパッケージ名に置換
+    pkg_path = rospack.get_path("xarm_apriltag_auto")  # ← 実際のパッケージ名に置換
     save_path = os.path.join(pkg_path, "public", "tag_pose.txt")
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)  # 念のため

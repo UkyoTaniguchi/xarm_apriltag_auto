@@ -97,7 +97,7 @@ class RecalibrationServer:
         # -----------------------------------------------------
         # パラメータ読み込み
         # -----------------------------------------------------
-        self.package_name = rospy.get_param("~package_name", "xarm_apriltag_demo")
+        self.package_name = rospy.get_param("~package_name", "xarm_apriltag_auto")
         self.yaml_rel_path = rospy.get_param("~poses_yaml_rel", "config/recalib_poses.yaml")
         self.yaml_root_key = rospy.get_param("~poses_root_key", "recalib_pose")
 

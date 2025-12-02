@@ -89,7 +89,7 @@ class PickAndPlace:
         # ------------------------------------------------------------
         # YAML Pose 読み込み
         # ------------------------------------------------------------
-        self.package_name = rospy.get_param("~package_name", "xarm_apriltag_demo")
+        self.package_name = rospy.get_param("~package_name", "xarm_apriltag_auto")
         self.yaml_relative_path = rospy.get_param("~poses_yaml_rel", "config/pick_and_place_pose.yaml")
         self.yaml_root_key = rospy.get_param("~poses_root_key", "pick_and_place")
 
