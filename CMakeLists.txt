@@ -48,9 +48,12 @@ catkin_install_python(PROGRAMS
   src/camera_monitor/roi_selector.py
   src/camera_monitor/capture_tag_pose.py
   src/camera_monitor/calib_cam_to_world.py
+  src/camera_monitor/relation_imu_and_pointclouds.py
+  src/camera_monitor/check_imu_original_data.py
   src/robot/move_to_tag.py
   src/robot/robot_task_manager.py
   src/robot/pick_and_place.py
+  utils/input_key.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 # --- 実行ファイルなしなのでここは削除 ---
