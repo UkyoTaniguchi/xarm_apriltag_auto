@@ -19,21 +19,14 @@ class SimpleTiltRMSE:
         self.pc_topic = rospy.get_param("~pointcloud_topic",
                                         "/camera/depth/color/points")
 
-        # theory: キー操作で使う tilt
-        # icp: IMU から計算した「初期重力方向からの傾き角」
-        self.tilt_deg = 0.0
+        self.tilt_deg = 0.0                     # theory: キー操作, icp: IMU差分
+        self.rot = np.eye(3)                    # theory用回転行列
 
-        # theory 用回転
-        self.rot = np.eye(3)
+        self.ref_points = None                  # ICP用基準点群
+        self.g_ref = None                       # IMU基準重力方向
 
-        # icp 用
-        self.ref_points = None         # 最初の点群（voxel 減）
-        self.g_ref = None              # 初期の重力方向（単位ベクトル）
-
-        # publisher
         self.pub_rot = rospy.Publisher("/tilt/rotated", PointCloud2, queue_size=1)
 
-        # subscribers
         rospy.Subscriber(self.pc_topic, PointCloud2, self.pc_callback)
         rospy.Subscriber("key_input", String, self.key_callback)
 
@@ -44,42 +37,28 @@ class SimpleTiltRMSE:
         rospy.loginfo("SimpleTiltRMSE started. mode=%s", self.mode)
         rospy.spin()
 
-    # -------------------------------------------------------
-    # IMU コールバック（icp モード専用）
-    #   linear_acceleration から「初期重力方向との差の角度」を tilt_deg とする
-    # -------------------------------------------------------
+    # ---------------------- IMU ----------------------
     def imu_callback(self, msg):
-        # 加速度ベクトル（重力 + 慣性）
-        ax = msg.linear_acceleration.x
-        ay = msg.linear_acceleration.y
-        az = msg.linear_acceleration.z
-
+        ax, ay, az = msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z
         g = np.array([ax, ay, az], dtype=float)
         n = np.linalg.norm(g)
         if n < 1e-6:
-            # ノイズ or 無効
             return
 
         g = g / n  # 単位ベクトル
 
-        # 初回: 基準重力方向を保存
         if self.g_ref is None:
             self.g_ref = g
             self.tilt_deg = 0.0
-            rospy.loginfo("[IMU] g_ref set to (%.3f, %.3f, %.3f)", g[0], g[1], g[2])
+            rospy.loginfo("[IMU] g_ref set to (%.3f, %.3f, %.3f)", *g)
             return
 
-        # 現在の tilt = g_ref と g のなす角
         dot = float(np.clip(np.dot(self.g_ref, g), -1.0, 1.0))
-        angle_rad = math.acos(dot)
-        self.tilt_deg = math.degrees(angle_rad)
+        self.tilt_deg = math.degrees(math.acos(dot))
 
-    # -------------------------------------------------------
-    # theory: キー入力で tilt_deg を変える
-    # -------------------------------------------------------
+    # ---------------------- key input ----------------------
     def key_callback(self, msg):
         if self.mode != "theory":
-            # icp モードではキー入力で tilt を変えない
             return
 
         if msg.data == "t":
@@ -90,22 +69,15 @@ class SimpleTiltRMSE:
             return
 
         self.update_rotation()
-
         rospy.loginfo("[KEY] tilt_deg=%.2f deg", self.tilt_deg)
 
-    # -------------------------------------------------------
-    # tilt → rotation（theory 専用）
-    # -------------------------------------------------------
     def update_rotation(self):
         self.rot = R.from_euler("x", np.deg2rad(self.tilt_deg)).as_matrix()
 
-    # -------------------------------------------------------
-    # 点群コールバック
-    # -------------------------------------------------------
+    # ---------------------- pointcloud ----------------------
     def pc_callback(self, msg):
         points = np.array([[p[0], p[1], p[2]]
-                           for p in pc2.read_points(msg, skip_nans=True)],
-                          dtype=float)
+                           for p in pc2.read_points(msg, skip_nans=True)], dtype=float)
 
         if len(points) == 0:
             return
@@ -115,31 +87,25 @@ class SimpleTiltRMSE:
         else:
             self._run_icp(points, msg)
 
-    # -------------------------------------------------------
-    # theory: 回転前 vs 回転後
-    # -------------------------------------------------------
+    # ---------------------- theory mode ----------------------
     def _run_theory(self, points, msg):
         rotated = (self.rot @ points.T).T
-        disp = np.linalg.norm(rotated - points, axis=1)
-        self.rmse = np.sqrt(np.mean(disp ** 2))
+        d = np.linalg.norm(rotated - points, axis=1)
 
-        rospy.loginfo("[THEORY] tilt=%.2f deg | RMSE=%.6f m",
-                      self.tilt_deg, self.rmse)
+        self.mean_d = float(np.mean(d))
+
+        rospy.loginfo("[THEORY] tilt=%.2f deg | mean_distance=%.6f m",
+                      self.tilt_deg, self.mean_d)
 
         self.publish(rotated, msg.header.frame_id)
 
-    # -------------------------------------------------------
-    # icp: ref(初回) vs points（実観測）を比較
-    #      tilt_deg は IMU からの「初期重力方向からの角度」
-    # -------------------------------------------------------
+    # ---------------------- ICP mode ----------------------
     def _run_icp(self, points, msg):
 
-        # IMU まだ初期化されていない場合
         if self.g_ref is None:
             rospy.loginfo_throttle(2.0, "[ICP] Waiting for IMU (g_ref not set)...")
             return
 
-        # 1. 最初の点群を ref として保存（voxel 減）
         if self.ref_points is None:
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(points)
@@ -147,7 +113,6 @@ class SimpleTiltRMSE:
             rospy.loginfo("[ICP] Saved reference cloud. N=%d", len(self.ref_points.points))
             return
 
-        # 2. 現在点群をダウンサンプル
         pcd_cur = o3d.geometry.PointCloud()
         pcd_cur.points = o3d.utility.Vector3dVector(points)
         cur_ds = pcd_cur.voxel_down_sample(0.02)
@@ -155,7 +120,7 @@ class SimpleTiltRMSE:
         if len(cur_ds.points) == 0:
             return
 
-        # 3. 最近傍距離（ref: self.ref_points）
+        # 最近傍
         pcd_ref = o3d.geometry.PointCloud()
         pcd_ref.points = self.ref_points.points
         kdtree = o3d.geometry.KDTreeFlann(pcd_ref)
@@ -166,22 +131,16 @@ class SimpleTiltRMSE:
             dists.append(math.sqrt(d[0]))
 
         dists = np.array(dists)
-        self.rmse = float(np.sqrt(np.mean(dists ** 2)))
-        mean_d = float(np.mean(dists))
+        self.mean_d = float(np.mean(dists))
         max_d = float(np.max(dists))
-
-        # tilt_deg はそのまま「IMU_diff」として解釈してよい
         self.imu_diff = self.tilt_deg
 
-        rospy.loginfo("[ICP] IMU_diff=%.2f deg | RMSE=%.4f | mean=%.4f | max=%.4f",
-                      self.imu_diff, self.rmse, mean_d, max_d)
+        rospy.loginfo("[ICP] IMU_diff=%.2f deg | mean=%.4f | max=%.4f",
+                      self.imu_diff, self.mean_d, max_d)
 
-        # 4. 現在の点群を赤で表示
         self.publish(points, msg.header.frame_id)
 
-    # -------------------------------------------------------
-    # publish (always red)
-    # -------------------------------------------------------
+    # ---------------------- publish & graph ----------------------
     def publish(self, points, frame):
         rgb = (255 << 16)
         rgb_f = np.frombuffer(np.uint32(rgb).tobytes(), dtype=np.float32)[0]
@@ -201,37 +160,33 @@ class SimpleTiltRMSE:
         pc2_msg = pc2.create_cloud(header, fields, pts)
         self.pub_rot.publish(pc2_msg)
 
-        # imuとrsmeの値のグラフ化
-        # theoryモードでは不要なのでicpモードのときのみ実行
+        # グラフ描画
         if self.mode == "icp":
-            self.plot_graph(self.imu_diff, self.rmse)
+            self.plot_graph(self.imu_diff, self.mean_d)
         else:
-            self.plot_graph(self.tilt_deg, self.rmse)
+            self.plot_graph(self.tilt_deg, self.mean_d)
 
-    def plot_graph(self, imu_diff, rmse):
-        # まだ figure を作っていない場合のみ作成
+    def plot_graph(self, tilt_or_imu, mean_val):
         if not hasattr(self, 'fig'):
             import matplotlib.pyplot as plt
             self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(8, 6))
             plt.ion()
             plt.show()
+            self.tilt_hist = []
+            self.mean_hist = []
 
-            self.imu_hist = []
-            self.rmse_hist = []
+        self.tilt_hist.append(tilt_or_imu)
+        self.mean_hist.append(mean_val)
 
-        self.imu_hist.append(imu_diff)
-        self.rmse_hist.append(rmse)
-
-        # 描画
         self.ax1.cla()
         self.ax2.cla()
 
-        self.ax1.plot(self.imu_hist, label='IMU diff (deg)')
-        self.ax1.set_ylabel("IMU diff [deg]")
+        self.ax1.plot(self.tilt_hist, label='IMU / tilt (deg)')
+        self.ax1.set_ylabel("Tilt / IMU diff [deg]")
         self.ax1.legend()
 
-        self.ax2.plot(self.rmse_hist, label='RMSE (m)')
-        self.ax2.set_ylabel("RMSE [m]")
+        self.ax2.plot(self.mean_hist, label='Mean distance (m)')
+        self.ax2.set_ylabel("Mean distance [m]")
         self.ax2.legend()
 
         self.fig.canvas.draw()
