@@ -18,6 +18,7 @@ import rospy
 from threading import Lock
 from collections import deque
 from sensor_msgs.msg import Imu, Image, CameraInfo
+import numpy as np
 from std_msgs.msg import Float32MultiArray, Float32
 from cv_bridge import CvBridge
 from std_srvs.srv import Trigger, TriggerResponse
@@ -44,10 +45,11 @@ class ImuIcpMonitor:
         self.max_tilt_deg = rospy.get_param("~tilt_threshold_deg", 1.0)
         self.max_icp_norm = rospy.get_param("~icp_threshold", 0.05)
         self.gravity_filter_alpha = rospy.get_param("~alpha", 0.1)
+        self.max_icp_rot_deg = rospy.get_param("~icp_rot_threshold_deg", 1.0)  # ★追加
 
         # 更新周期
-        self.imu_rate = rospy.get_param("~update_rate", 10.0)
-        self.icp_rate = 2.0
+        self.imu_rate = rospy.get_param("~update_rate", 30.0)
+        self.icp_rate = 30.0
 
         # Depth/Camera
         self.depth_topic = rospy.get_param("~depth_topic", "/cam_2/depth/image_rect_raw")
@@ -97,6 +99,7 @@ class ImuIcpMonitor:
         self.dy_hist = deque(maxlen=buffer_cap)
         self.dz_hist = deque(maxlen=buffer_cap)
         self.tilt_hist = deque(maxlen=buffer_cap)
+        self.icp_rot_hist = deque(maxlen=buffer_cap)  # ★追加
 
         self.frame_idx = 0
         self.buffer_lock = Lock()
@@ -225,12 +228,13 @@ class ImuIcpMonitor:
             self.tilt_hist.append(tilt_deg)
 
         # しきい値判定（IMU）
-        self._check_recalib_trigger(tilt=tilt_deg, icp=None)
+        self._check_recalib_trigger(tilt=tilt_deg, icp=None, icp_rot=None)
 
     # ============================================================
     # ICP処理
     # ============================================================
     def on_depth(self, msg):
+        t0 = time.time()
         if not (self.roi_active and self.has_camera_info):
             return
 
@@ -242,7 +246,6 @@ class ImuIcpMonitor:
         try:
             depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
 
-            # 単位変換
             if depth.dtype == np.uint16:
                 depth = depth.astype(np.float32) / 1000.0
             elif depth.dtype != np.float32:
@@ -314,16 +317,27 @@ class ImuIcpMonitor:
             T = reg.transformation
             dx, dy, dz = T[0, 3], T[1, 3], T[2, 3]
 
+            R = T[0:3, 0:3]
+            trace = np.trace(R)
+            val = (trace - 1.0) / 2.0
+            val = np.clip(val, -1.0, 1.0)
+            theta_deg = math.degrees(math.acos(val))
+
+
+            icp_time_ms = (time.time() - t0) * 1000.0  # ★計測
+            rospy.loginfo(f"ICP time = {icp_time_ms:.2f} ms")  # ★表示
+            rospy.loginfo(f"ICP rotation diff = {theta_deg:.3f} deg")
+
             with self.buffer_lock:
                 self.dx_hist.append(dx)
                 self.dy_hist.append(dy)
                 self.dz_hist.append(dz)
+                self.icp_rot_hist.append(theta_deg)
 
             icp_norm = float(math.sqrt(dx*dx + dy*dy + dz*dz))
             self.pub_icp.publish(Float32(icp_norm))
 
-            # しきい値チェック（ICP）
-            self._check_recalib_trigger(tilt=None, icp=icp_norm)
+            self._check_recalib_trigger(tilt=None, icp=icp_norm, icp_rot=theta_deg)
 
         except Exception as e:
             rospy.logwarn_throttle(1.0, f"ICP failed: {e}")
@@ -344,7 +358,7 @@ class ImuIcpMonitor:
     # ============================================================
     # 再キャリブレーショントリガ判定
     # ============================================================
-    def _check_recalib_trigger(self, tilt=None, icp=None):
+    def _check_recalib_trigger(self, tilt=None, icp=None, icp_rot=None):
         now = time.time()
 
         # cooldown
@@ -355,12 +369,13 @@ class ImuIcpMonitor:
 
         tilt_flag = (tilt is not None and tilt > self.max_tilt_deg)
         icp_flag = (icp is not None and icp > self.max_icp_norm)
+        rot_flag = (icp_rot is not None and icp_rot > self.max_icp_rot_deg)  # ★追加
 
-        if not (tilt_flag or icp_flag):
+        if not (tilt_flag or icp_flag or rot_flag):
             return
 
         rospy.logwarn("=== Recalibration Triggered ===")
-        rospy.logwarn(f" tilt={tilt}, icp={icp}")
+        rospy.logwarn(f" tilt={tilt}, icp={icp}, icp_rot={icp_rot}")
 
         self.recalib_active = True
         self.last_recalib_time = now
@@ -389,8 +404,8 @@ class ImuIcpMonitor:
     # グラフ描画
     # ============================================================
     def _init_plot(self):
-        self.fig, (self.ax_icp, self.ax_tilt) = plt.subplots(2, 1, figsize=(4, 2))
-        self.fig.suptitle("ICP Δ[m] + IMU Tilt [deg]")
+        self.fig, (self.ax_icp, self.ax_tilt, self.ax_rot) = plt.subplots(3, 1, figsize=(10, 7))
+        self.fig.suptitle("ICP Δ[m] + IMU Tilt [deg] + ICP Rotation [deg]")
 
         (self.line_dx,) = self.ax_icp.plot([], [], label="Δx [m]")
         (self.line_dy,) = self.ax_icp.plot([], [], label="Δy [m]")
@@ -407,6 +422,12 @@ class ImuIcpMonitor:
         self.ax_tilt.grid(True)
         self.ax_tilt.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
 
+        (self.line_rot,) = self.ax_rot.plot([], [], label="ICP Rot [deg]", color="green")  # ★追加
+        self.ax_rot.set_ylim(0, 1)
+        self.ax_rot.set_ylabel("Rot [deg]")
+        self.ax_rot.grid(True)
+        self.ax_rot.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
+
         self.fig.tight_layout(rect=[0, 0, 0.85, 1])
 
     def update_plot(self, _):
@@ -418,8 +439,9 @@ class ImuIcpMonitor:
             dy = np.array(self.dy_hist)
             dz = np.array(self.dz_hist)
             tilt = np.array(self.tilt_hist)
+            rot = np.array(self.icp_rot_hist)
 
-        max_len = max(len(dx), len(dy), len(dz), len(tilt), 1)
+        max_len = max(len(dx), len(dy), len(dz), len(tilt), len(rot), 1)
         x = np.arange(self.frame_idx - max_len + 1, self.frame_idx + 1)
 
         # パディング
@@ -433,20 +455,23 @@ class ImuIcpMonitor:
         dy = pad(dy)
         dz = pad(dz)
         tilt = pad(tilt)
+        rot = pad(rot)
 
         self.line_dx.set_data(x, dx)
         self.line_dy.set_data(x, dy)
         self.line_dz.set_data(x, dz)
         self.line_tilt.set_data(x, tilt)
+        self.line_rot.set_data(x, rot)
 
         if self.frame_idx > 1:
             xmin = max(0, self.frame_idx - len(dx))
             xmax = self.frame_idx
             self.ax_icp.set_xlim(xmin, xmax)
             self.ax_tilt.set_xlim(xmin, xmax)
+            self.ax_rot.set_xlim(xmin, xmax)
 
         self.frame_idx += 1
-        return [self.line_dx, self.line_dy, self.line_dz, self.line_tilt]
+        return [self.line_dx, self.line_dy, self.line_dz, self.line_tilt, self.line_rot]
 
     # ============================================================
     def run(self):
