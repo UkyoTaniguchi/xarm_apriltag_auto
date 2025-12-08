@@ -6,14 +6,15 @@ import math
 import numpy as np
 import geometry_msgs.msg
 from scipy.spatial.transform import Rotation
-from tf.transformations import quaternion_from_euler
-# --- 新規追加: TFとファイル操作のためのライブラリ ---
+from tf.transformations import quaternion_from_euler, quaternion_from_matrix, quaternion_multiply
 import tf2_ros
 import tf
 from apriltag_ros.msg import AprilTagDetectionArray
 from geometry_msgs.msg import TransformStamped
 
 # --- グローバル変数と初期設定 ---
+tf_buffer = None # グローバル変数として初期化
+tf_listener = None
 # MoveIt! Library
 robot = moveit_commander.RobotCommander()
 xarm = moveit_commander.MoveGroupCommander("xarm6")
@@ -37,8 +38,8 @@ def ArmInitialization():
     global xarm
     
     # 速度と加速度を設定
-    xarm.set_max_velocity_scaling_factor(0.2)
-    xarm.set_max_acceleration_scaling_factor(0.2)
+    xarm.set_max_velocity_scaling_factor(0.1)
+    xarm.set_max_acceleration_scaling_factor(0.1)
     
     # 初期状態の情報を出力
     rospy.loginfo("=" * 10 + " Robot Initialization Complete " + "=" * 10)
@@ -53,6 +54,9 @@ def save_tag_and_camera_pose_tf(tag_id_list, file_suffix):
     :param tag_id_list: 保存対象のタグIDのリスト (例: [0], [1], [0, 1])
     :param file_suffix: 保存ファイル名の接尾辞 (例: "_id0_done.txt")
     """
+
+    global tf_buffer
+
     # データを一時的に保持するための辞書
     current_tag_info = {}
     
@@ -73,17 +77,17 @@ def save_tag_and_camera_pose_tf(tag_id_list, file_suffix):
         position = pose.position
         orientation = pose.orientation
         
-        tag_info_lines.append(f"--- Tag ID: {tag_id} ---")
+        tag_info_lines.append(f"Tag ID: {tag_id}")
         tag_info_lines.append(f"Position: x={position.x:.6f}, y={position.y:.6f}, z={position.z:.6f}")
         tag_info_lines.append(f"Orientation: x={orientation.x:.6f}, y={orientation.y:.6f}, z={orientation.z:.6f}, w={orientation.w:.6f}")
         tag_info_lines.append("")
 
     # カメラの位置姿勢をTFから取得
     try:
-        tf_buffer = tf2_ros.Buffer()
-        listener = tf2_ros.TransformListener(tf_buffer)
 
         rospy.sleep(0.5)  # TFが準備されるまで少し待つ
+
+        transform: TransformStamped = tf_buffer.lookup_transform
 
         transform: TransformStamped = tf_buffer.lookup_transform(
             target_frame='world',
@@ -95,7 +99,7 @@ def save_tag_and_camera_pose_tf(tag_id_list, file_suffix):
         t = transform.transform.translation
         r = transform.transform.rotation
 
-        tag_info_lines.append("--- cam_1_color_optical_frame w.r.t world ---")
+        tag_info_lines.append("cam_1_color_optical_frame w.r.t world")
         tag_info_lines.append(f"Position: x={t.x:.6f}, y={t.y:.6f}, z={t.z:.6f}")
         tag_info_lines.append(f"Orientation: x={r.x:.6f}, y={r.y:.6f}, z={r.z:.6f}, w={r.w:.6f}")
 
@@ -162,6 +166,96 @@ def calculate_target_pose(pose_msg, offset_distance):
     
     return modified_pose
 
+def calculate_fallback_pose(pose_stamped_msg, offset_distance=0.25):
+    """
+    ARマーカと base_link を結ぶ直線上で、ARマーカから手前25cmの位置を目標とします。
+    アーム先端のZ軸（ツール方向）がARマーカを向く姿勢を採用します。
+    """
+    rospy.loginfo("[INFO] フォールバックポーズの計算を開始します。")
+    
+    # 1. ARタグと base_link の位置を取得
+    p_tag_msg = pose_stamped_msg.pose.position
+    p_tag = np.array([p_tag_msg.x, p_tag_msg.y, p_tag_msg.z])
+    
+    try:
+        # base_link の位置を world フレームに対して取得
+        transform: TransformStamped = tf_buffer.lookup_transform(
+            pose_stamped_msg.header.frame_id, # 'world'
+            'link_base', # アームの根元
+            rospy.Time(0),
+            rospy.Duration(1.0)
+        )
+        p_base = np.array([transform.transform.translation.x, 
+                           transform.transform.translation.y, 
+                           transform.transform.translation.z])
+    except Exception as e:
+        rospy.logerr(f"[ERROR] link_base のTF取得に失敗しました: {e}. base_linkを原点(0,0,0)と仮定します。")
+        p_base = np.array([0.0, 0.0, 0.0])
+
+    # 2. ARタグ -> base_link への方向ベクトル (V_base)
+    # フォールバック位置 P_fall は P_tag + (0.25m * 単位V_base)
+    v_base = p_base - p_tag
+    v_base_norm = np.linalg.norm(v_base)
+    
+    if v_base_norm < 1e-6:
+        rospy.logerr("[ERROR] ARタグと base_link の位置が近すぎます。フォールバック計算を中止します。")
+        return None
+
+    v_base_unit = v_base / v_base_norm
+    
+    # 3. 目標位置 P_fall を計算 (ARタグからベースに向かって offset_distance)
+    p_fall = p_tag + v_base_unit * offset_distance
+
+    # 4. 目標姿勢 (アーム先端のZ軸がARタグを向く)
+    
+    # Z-axis: ツール先端から ARタグの中心を指す方向
+    v_z_fwd = p_tag - p_fall
+    v_z_unit = v_z_fwd / np.linalg.norm(v_z_fwd)
+    
+    # Y-axis (垂直方向の制約): ツール先端のY軸がワールドZ軸に垂直になるように調整
+    world_z = np.array([0, 0, 1])
+    
+    # X-axis (右方向): ワールドZとZ軸の外積から横方向を計算
+    v_x_right = np.cross(v_z_unit, world_z)
+    v_x_right_norm = np.linalg.norm(v_x_right)
+    
+    if v_x_right_norm < 1e-6:
+        # ターゲットがワールドZ軸上にある場合（非常に稀）
+        v_x_right = np.array([1, 0, 0]) # X軸をデフォルトに設定
+    else:
+        v_x_right = v_x_right / v_x_right_norm
+    
+    # Y-axis (上方向): 右方向と前方向の外積
+    v_y_up = np.cross(v_z_unit, v_x_right)
+    
+    # 回転行列 R = [V_x | V_y | V_z] (MoveIt!の慣例に基づく)
+    R_matrix = np.column_stack([v_x_right, v_y_up, v_z_unit])
+
+    T_matrix_4x4 = np.identity(4)
+    T_matrix_4x4[:3, :3] = R_matrix
+
+    q_original = quaternion_from_matrix(T_matrix_4x4)  # (x, y, z, w)
+
+    # Z軸周りに -90度の回転 (グリッパーの向きの調整)
+    rotation_angle_z_deg = -90
+    q_rot = quaternion_from_euler(0, 0, np.deg2rad(rotation_angle_z_deg))
+
+    q_new = quaternion_multiply(q_original, q_rot)
+
+    # 回転行列をクォータニオンに変換
+    # q_new = quaternion_from_matrix(T_matrix_4x4)
+
+    # 5. geometry_msgs/Pose オブジェクトの作成
+    fallback_pose = geometry_msgs.msg.Pose()
+    fallback_pose.position.x = p_fall[0]
+    fallback_pose.position.y = p_fall[1]
+    fallback_pose.position.z = p_fall[2]
+    fallback_pose.orientation.x = q_new[0]
+    fallback_pose.orientation.y = q_new[1]
+    fallback_pose.orientation.z = q_new[2]
+    fallback_pose.orientation.w = q_new[3]
+    
+    return fallback_pose
 
 def pose_callback_id0(msg):
     """
@@ -226,50 +320,82 @@ def pose_callback_id1(msg):
 def move_to_subscribed_pose(pose_stamped_msg):
     """
     MoveIt! を使用して指定されたポーズに移動します。
-    移動が失敗した場合、ARマーカからの距離を遠くして再試行します。
+    失敗した場合、ARマーカからの距離を遠くして再試行し、
+    それでも失敗した場合はフォールバックポーズで最終試行を行います。
     """
     global xarm
     rospy.loginfo("--- xArm 移動開始（再試行ロジック付き）---")
 
-    # 再試行のパラメータ
-    initial_offset = 0.25  # 初期距離 
-    max_offset = 0.50      # 最大距離 
-    step_size = 0.05       # 増加ステップ
+    # 再試行のパラメータ (0.25m, 0.30m, 0.35m, 0.40m, 0.45m, 0.50m を試行)
+    initial_offset = 0.25 
+    max_offset = 0.50     
+    step_size = 0.05      
     
     current_offset = initial_offset
     success = False
 
+    # --- 1. 標準的なZ軸後退と姿勢固定の再試行ループ ---
     while current_offset <= max_offset:
-        # 1. 目標ポーズを計算
         target_pose = calculate_target_pose(pose_stamped_msg, current_offset)
 
-        rospy.loginfo(f"試行: オフセット距離 {current_offset:.2f}m")
+        rospy.loginfo(f"試行 (標準): オフセット距離 {current_offset:.2f}m")
 
-        # 2. 目標ポーズを設定
         xarm.set_pose_target(target_pose)
         
-        # 3. プランニングを実行し、結果を正しく受け取る
         plan_success, plan, _, _ = xarm.plan()
         
-        # 4. プランニング結果の評価
         if plan_success and len(plan.joint_trajectory.points) > 0:
             rospy.loginfo(f"オフセット {current_offset:.2f}m でプランニングに成功しました。実行します。")
-            
-            # 5. 実行
             success = xarm.execute(plan, wait=True)
             if success:
-                break # 成功したのでループを抜ける
+                break 
             else:
                 rospy.logwarn("プランニングは成功しましたが、実行に失敗しました。次のオフセットを試行します。")
         else:
             rospy.logwarn(f"オフセット {current_offset:.2f}m でプランニングに失敗しました。次のオフセットを試行します。")
             
-        # 停止と目標クリア (次の試行のために)
         xarm.stop()
         xarm.clear_pose_targets()
-        
-        # 次のオフセットへ
         current_offset += step_size
+
+    # --- 2. フォールバックポーズでの最終試行 ---
+    if not success:
+        rospy.logwarn("標準的なZ軸後退の再試行がすべて失敗しました。フォールバックポーズで距離を変えて試行します。")
+        
+        # 再試行のパラメータを定義
+        fallback_initial_offset = 0.25 
+        fallback_max_offset = 0.50     
+        fallback_step_size = 0.05      
+        
+        current_fallback_offset = fallback_initial_offset
+
+        while current_fallback_offset <= fallback_max_offset:
+            rospy.loginfo(f"試行 (フォールバック): base_link方向 オフセット距離 {current_fallback_offset:.2f}m")
+            
+            # フォールバックポーズを計算 (ARタグからbase_linkに向かって current_fallback_offset)
+            fallback_pose = calculate_fallback_pose(pose_stamped_msg, offset_distance=current_fallback_offset)
+            
+            if fallback_pose:
+                xarm.set_pose_target(fallback_pose)
+                
+                plan_success, plan, _, _ = xarm.plan()
+                
+                if plan_success and len(plan.joint_trajectory.points) > 0:
+                    rospy.loginfo(f"フォールバックポーズ (オフセット {current_fallback_offset:.2f}m) でプランニングに成功しました。実行します。")
+                    success = xarm.execute(plan, wait=True)
+                    if success:
+                        break # 成功したらループを抜ける
+                    else:
+                        rospy.logwarn("フォールバックポーズでのプランニングは成功しましたが、実行に失敗しました。次のオフセットを試行します。")
+                else:
+                    rospy.logwarn(f"フォールバックポーズ (オフセット {current_fallback_offset:.2f}m) でプランニングに失敗しました。次のオフセットを試行します。")
+            else:
+                rospy.logerr("フォールバックポーズの計算ができませんでした。これ以上の試行を中止します。")
+                break # 計算自体に失敗したら中止
+                
+            xarm.stop()
+            xarm.clear_pose_targets()
+            current_fallback_offset += fallback_step_size
 
     # 最終的な停止と目標クリア
     xarm.stop()
@@ -278,7 +404,7 @@ def move_to_subscribed_pose(pose_stamped_msg):
     if success:
         rospy.loginfo("[INFO] Move to subscribed pose succeeded.")
     else:
-        rospy.logerr(f"[ERROR] Max offset {max_offset:.2f}m まで試行しましたが、移動に失敗しました。")
+        rospy.logerr(f"[ERROR] すべての移動試行（標準再試行およびフォールバック）に失敗しました。")
         
     return success
 
@@ -298,6 +424,9 @@ def start_id1_phase():
 
 if __name__ == '__main__':
     rospy.init_node("xArm_auto_move_sequential")
+    tf_buffer = tf2_ros.Buffer()
+    tf_listener = tf2_ros.TransformListener(tf_buffer)
+    rospy.sleep(1.0) # TFの準備を待つ
     ArmInitialization()
 
     # --- ID0のサブスクライバーを作成 (最初に待機) ---

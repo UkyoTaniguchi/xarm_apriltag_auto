@@ -53,8 +53,8 @@ def ArmInitialization():
     print("=" * 10, " Printing Xarm initial rpy: ")
     print(xarm_initial_rpy)
 
-    xarm.set_max_velocity_scaling_factor(0.2)
-    xarm.set_max_acceleration_scaling_factor(0.2)
+    xarm.set_max_velocity_scaling_factor(0.1)
+    xarm.set_max_acceleration_scaling_factor(0.1)
 
 
 def Go_homeposition():
@@ -97,44 +97,34 @@ def test_pose():
     xarm.go()
 
 def apriltag_towoard_pose():
-    q = quaternion_from_euler(0, math.pi/2, 0)  # x方向を向く
+    q = quaternion_from_euler(math.pi, 0.0, 0) 
     
     target_pose = geometry_msgs.msg.Pose()
-    # target_pose.position.x = x
-    # target_pose.position.y = y
-    # target_pose.position.z = z
-    # target_pose.orientation.x = q[0]
-    # target_pose.orientation.y = q[1]
-    # target_pose.orientation.z = q[2]
-    # target_pose.orientation.w = q[3]
-    target_pose.position.x = 0.8462385436134898
-    target_pose.position.y = 0.11094014777770038
-    target_pose.position.z = 0.3361595531386302
-    target_pose.orientation.x = 0.7178595194441207
-    target_pose.orientation.y = -0.0007155137903498503
-    target_pose.orientation.z = 0.6961876143794062
-    target_pose.orientation.w = 6.299351872424036e-05
-
-    xarm.set_max_velocity_scaling_factor(0.2)
-    xarm.set_max_acceleration_scaling_factor(0.2)
-    xarm.set_pose_target(target_pose)
-    xarm.go()
-
-def go_to_predefined_pose():
-    # オイラー角をクォータニオンに変換
-    q = quaternion_from_euler(0, math.pi/2, 0)
-
-    target_pose = geometry_msgs.msg.Pose()
-    target_pose.position.x = 0.65
-    target_pose.position.y = 0.10
-    target_pose.position.z = 0.30
+    target_pose.position.x = 0.574
+    target_pose.position.y = 0.034
+    target_pose.position.z = -0.036 + 0.04
     target_pose.orientation.x = q[0]
     target_pose.orientation.y = q[1]
     target_pose.orientation.z = q[2]
     target_pose.orientation.w = q[3]
 
-    xarm.set_max_velocity_scaling_factor(0.2)
-    xarm.set_max_acceleration_scaling_factor(0.2)
+    xarm.set_max_velocity_scaling_factor(0.1)
+    xarm.set_max_acceleration_scaling_factor(0.1)
+    xarm.set_pose_target(target_pose)
+    xarm.go()
+
+def go_to_predefined_pose():
+    target_pose = geometry_msgs.msg.Pose()
+    target_pose.position.x = 0.5882599104012737
+    target_pose.position.y = 0.031026934987645555
+    target_pose.position.z = 0.2726154198538191
+    target_pose.orientation.x = -0.9999214758446878
+    target_pose.orientation.y = -0.0013610684920739974
+    target_pose.orientation.z = -0.01244152830583155
+    target_pose.orientation.w = 0.0006308807785656273
+
+    xarm.set_max_velocity_scaling_factor(0.1)
+    xarm.set_max_acceleration_scaling_factor(0.1)
     xarm.set_pose_target(target_pose)
     xarm.go()
 

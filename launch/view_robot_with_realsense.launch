@@ -8,6 +8,9 @@
     <arg name="add_realsense_d435i" value="$(arg add_realsense_d435i)" />
   </include>
 
+  <node pkg="tf" type="static_transform_publisher" name="robot_base_offset_tf" 
+          args="0 0 -0.01 0 0 0 world link_base 100" />
+
   <!-- RealSense TF broadcaster ノードの追加 -->
   <node name="camera_to_xarm6eef_broadcaster"
         pkg="xarm_apriltag_demo"

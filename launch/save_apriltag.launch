@@ -1,0 +1,7 @@
+<launch>
+    <node name="tag_pose_listener_1"
+        pkg="xarm_apriltag_demo"
+        type="tag_pose_listener_1.py"
+        output="screen"
+        cwd="node" />
+</launch>

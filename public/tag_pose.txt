@@ -7,25 +7,25 @@ camera_frame: cam_1_color_optical_frame
 [ID 0] detection
 Tag ID: 0
 frame_id: cam_1_color_optical_frame
-time_sec: 1762758695.487091780
+time_sec: 1765223846.922164440
 tag w.r.t camera:
-  Position: x=0.169991075, y=0.030214246, z=0.895862261
-  Orientation: x=0.995783031, y=0.005103087, z=-0.075225234, w=-0.052261635
+  Position: x=-0.065902850, y=-0.185302316, z=0.620588632
+  Orientation: x=0.911222299, y=0.005570820, z=0.050628408, w=-0.408753780
 
 cam_1_color_optical_frame w.r.t world:
-camera: Position: x=0.256648246, y=0.032551099, z=0.440982042
-camera: Orientation: x=-0.518996244, y=0.515151397, z=-0.480562629, w=0.484067597
+camera: Position: x=0.312289869, y=0.023428003, z=0.337874321
+camera: Orientation: x=-0.611065137, y=0.616228748, z=-0.358866404, w=0.343622446
 
 ----------------------------------------
 [ID 1] detection
 Tag ID: 1
 frame_id: cam_1_color_optical_frame
-time_sec: 1762758695.487091780
+time_sec: 1765223923.609322071
 tag w.r.t camera:
-  Position: x=-0.167839932, y=0.001285534, z=0.951014021
-  Orientation: x=0.995785900, y=0.014882475, z=0.064760614, w=-0.063206139
+  Position: x=0.431926223, y=-0.090513404, z=0.917989867
+  Orientation: x=0.929587980, y=-0.090092483, z=-0.307645971, w=-0.181943643
 
 cam_1_color_optical_frame w.r.t world:
-camera: Position: x=0.256648246, y=0.032551099, z=0.440982042
-camera: Orientation: x=-0.518996244, y=0.515151397, z=-0.480562629, w=0.484067597
+camera: Position: x=0.223969668, y=0.047901017, z=0.408044361
+camera: Orientation: x=-0.511600380, y=0.469892233, z=-0.502433856, w=0.514807260
 

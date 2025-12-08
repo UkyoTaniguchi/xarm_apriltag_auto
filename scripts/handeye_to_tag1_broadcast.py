@@ -10,7 +10,7 @@ import numpy as np
 import re
 import os
 
-TAG_FILE_DEFAULT = "/home/ukyo/catkin_ws/src/xarm_apriltag_demo/public/accurate_tag_pose_id0_done.txt"
+TAG_FILE_DEFAULT = "/home/ukyo/catkin_ws/src/xarm_apriltag_demo/public/accurate_tag_pose_id1_done.txt"
 
 _pos_re = re.compile(r"Position:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+)")
 _ori_re = re.compile(r"Orientation:\s*x=([-\d\.eE]+),\s*y=([-\d\.eE]+),\s*z=([-\d\.eE]+),\s*w=([-\d\.eE]+)")
@@ -86,7 +86,7 @@ def broadcast_transform():
 
     # パラメータ（必要なら rosparam で上書き可能）
     tag_file = rospy.get_param("~tag_file", TAG_FILE_DEFAULT)
-    tag_id   = rospy.get_param("~tag_id", 0)
+    tag_id   = rospy.get_param("~tag_id", 1)
 
     # --- 1) ファイルから数値を取り込む ---
     translation, raw_quat, T_w_c1_pos, T_w_c1_quat = load_from_tag_pose_file(tag_file, tag_id)
@@ -134,7 +134,7 @@ def broadcast_transform():
             T_w_c2_pos,
             T_w_c2_quat,
             rospy.Time.now(),
-            "cam_2_link",
+            "cam_3_link",
             "world"
         )
         rate.sleep()
