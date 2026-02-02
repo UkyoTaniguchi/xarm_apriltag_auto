@@ -1,7 +1,7 @@
 Tag ID: 0
-Position: x=0.027381, y=0.063460, z=0.400397
-Orientation: x=0.999844, y=0.014039, z=-0.000178, w=0.010711
+Position: x=0.030117, y=0.056355, z=0.398013
+Orientation: x=0.999324, y=0.010924, z=-0.029059, w=0.019678
 
 cam_1_color_optical_frame w.r.t world
-Position: x=0.540910, y=0.075601, z=0.114890
-Orientation: x=-0.435572, y=0.395328, z=-0.549198, w=0.593611
+Position: x=0.588096, y=0.084846, z=0.128945
+Orientation: x=0.365924, y=-0.368297, z=0.604908, w=-0.603774

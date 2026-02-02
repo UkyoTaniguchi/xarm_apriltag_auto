@@ -103,10 +103,13 @@ def broadcast_transform():
     corrected_quat = tft.quaternion_multiply(raw_quat, q_correction)
 
     local_offset = np.array([0.0042, 0.0175, -0.0525])  # cam_2_link基準の平行移動
+    accuracy_local_offset = np.array([-0.02, 0.008, 0]) #精度を上げるための平行移動
+
+    final_local_offset = local_offset + accuracy_local_offset
 
     # corrected_quat の回転行列でオフセットを変換
     rot_matrix = tft.quaternion_matrix(corrected_quat)[:3, :3]
-    offset_global = rot_matrix @ local_offset
+    offset_global = rot_matrix @ final_local_offset
 
     # 移動後の位置（型を合わせる）
     final_translation = np.array(translation) + offset_global

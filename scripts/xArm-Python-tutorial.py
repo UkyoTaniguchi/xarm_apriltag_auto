@@ -100,9 +100,9 @@ def apriltag_towoard_pose():
     q = quaternion_from_euler(math.pi, 0.0, 0) 
     
     target_pose = geometry_msgs.msg.Pose()
-    target_pose.position.x = 0.574
-    target_pose.position.y = 0.034
-    target_pose.position.z = -0.036 + 0.04
+    target_pose.position.x = 0.565
+    target_pose.position.y = 0.0252
+    target_pose.position.z = -0.010 + 0.04
     target_pose.orientation.x = q[0]
     target_pose.orientation.y = q[1]
     target_pose.orientation.z = q[2]
