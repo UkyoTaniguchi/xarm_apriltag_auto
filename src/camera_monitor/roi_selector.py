@@ -32,7 +32,8 @@ class RoiStaticFixer:
         self.roi_publisher = rospy.Publisher(self.roi_topic_out, Float32MultiArray, queue_size=1)
 
         # ★追加：初期ROI（例: "0.3 0.3 0.6 0.6"）
-        initial_roi_str = rospy.get_param("~initial_roi", None)
+        # initial_roi_str = rospy.get_param("~initial_roi", None)
+        initial_roi_str = rospy.get_param("~initial_roi", "0.2 0.7 0.4 0.9")
 
         # 初期ROIが与えられていれば即適用
         if initial_roi_str is not None:
@@ -95,7 +96,7 @@ class RoiStaticFixer:
         motion_map_norm = cv2.normalize(max_motion_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
         img_height, img_width = motion_map_norm.shape
 
-        target_roi_ratio = 0.15  # 最終ROIは画像全体の15%
+        target_roi_ratio = 0.05  # 最終ROIは画像全体の15%
         total_pixels = img_height * img_width
         target_pixel_count = int(total_pixels * target_roi_ratio)
 
@@ -145,7 +146,7 @@ class RoiStaticFixer:
         self.roi_publisher.publish(roi_msg)
 
         rospy.set_param("/roi/fixed", [xmin, ymin, xmax, ymax])
-
+        # rospy.set_param("/roi/fixed", {"xmin": xmin, "ymin": ymin, "xmax": xmax, "ymax": ymax})
         rospy.loginfo(
             f"ROI fixed (normalized): "
             f"{xmin:.3f}, {ymin:.3f}, {xmax:.3f}, {ymax:.3f}"

@@ -142,16 +142,11 @@ class RecalibrationServer:
     # Recalibration Handler
     # =========================================================
     def handle_recalibration(self, _req):
-        """
-        /recalibration/run サービスの処理本体。
-        - Pick&Place の停止
-        - 再キャリブレーション姿勢への移動
-        - AprilTag ベースの再キャリブ実行
-        - TF更新通知
-        - IMU/ICP Reference Reset
-        """
         if self.is_processing:
             return TriggerResponse(success=False, message="既に再キャリブレーション処理中です。")
+
+        # --- 計測開始 ---
+        start_time = rospy.Time.now()
 
         # どのカメラから要求が来たか取得（なければ None）
         target_camera = None
@@ -167,13 +162,9 @@ class RecalibrationServer:
         else:
             rospy.loginfo("Recalibration requested (camera unspecified).")
 
-        # -----------------------------------------------------
-        # Pick&Place ノードへ「動くな」指示
-        # -----------------------------------------------------
         rospy.set_param(MOTION_LOCK_PARAM, True)
         rospy.loginfo("Pick&Place ノードの動作停止を要求中...")
 
-        # Pick&Place が動作完了するまで待機
         while rospy.get_param(MOTION_BUSY_PARAM, False):
             rospy.loginfo_throttle(5.0, "Pick&Place のサイクル終了待ち中...")
             rospy.sleep(1.0)
@@ -182,25 +173,19 @@ class RecalibrationServer:
 
         try:
             with self.thread_lock:
-                # -----------------------------------------------------
-                # MoveIt：安全停止 → 状態更新
-                # -----------------------------------------------------
+
                 self.arm.stop()
                 self.arm.clear_pose_targets()
                 self.arm.set_start_state_to_current_state()
 
                 rospy.loginfo("=== 再キャリブレーション開始 ===")
 
-                # -----------------------------------------------------
-                # 再キャリブ姿勢へ移動
-                # -----------------------------------------------------
                 pose_key = None
                 if target_camera and target_camera in self.pose_table:
                     pose_key = target_camera
                 elif "pose" in self.pose_table:
                     pose_key = "pose"
                 else:
-                    # 使えるキーがない場合はエラー
                     keys = ", ".join(self.pose_table.keys())
                     msg = f"利用可能な再キャリブ姿勢が見つかりません (keys: {keys})"
                     rospy.logerr(msg)
@@ -208,44 +193,41 @@ class RecalibrationServer:
 
                 recalib_pose = self.pose_table[pose_key]
                 rospy.loginfo(f"Using recalibration pose key: {pose_key}")
+
                 self.arm.set_pose_target(recalib_pose)
                 moved = self.arm.go(wait=True)
 
-                if moved:
-                    rospy.loginfo("再キャリブレーション姿勢に到達しました。")
-                    rospy.loginfo("現在姿勢を取得中...")
-                    current_pose = self.arm.get_current_pose().pose
-                    rospy.loginfo(f"Current Pose: {current_pose}")
-
-                    # -----------------------------------------------------
-                    # AprilTag キャプチャサービス呼び出し
-                    # -----------------------------------------------------
-                    rospy.loginfo("カメラキャリブレーション実行中...")
-                    try:
-                        capture_tag_service = rospy.ServiceProxy("/capture_tag_pose", Trigger)
-                        result = capture_tag_service()
-
-                        if result.success:
-                            rospy.loginfo("カメラキャリブレーション成功。")
-
-                            # TF更新ノードへ通知
-                            self.reload_tf_publisher.publish()
-                            rospy.loginfo("TF更新要求を送信しました。")
-
-                        else:
-                            rospy.logerr(f"キャリブレーション失敗: {result.message}")
-                            return TriggerResponse(success=False, message="キャリブレーション失敗。")
-
-                    except Exception as e:
-                        rospy.logerr(f"capture_tag_pose の呼び出し失敗: {e}")
-                        return TriggerResponse(success=False, message="capture_tag_pose 呼び出しに失敗。")
-
-                else:
+                if not moved:
                     return TriggerResponse(success=False, message="再キャリブレーション姿勢に移動できませんでした。")
 
-                # -----------------------------------------------------
-                # ホーム姿勢へ復帰
-                # -----------------------------------------------------
+                rospy.loginfo("再キャリブレーション姿勢に到達しました。")
+                current_pose = self.arm.get_current_pose().pose
+                rospy.loginfo(f"Current Pose: {current_pose}")
+
+                rospy.loginfo("カメラキャリブレーション実行中...")
+                try:
+                    capture_tag_service = rospy.ServiceProxy("/capture_tag_pose", Trigger)
+                    result = capture_tag_service()
+
+                    if result.success:
+                        rospy.loginfo("カメラキャリブレーション成功。")
+                        self.reload_tf_publisher.publish()
+                        rospy.loginfo("TF更新要求を送信しました。")
+                    else:
+                        rospy.logerr(f"キャリブレーション失敗: {result.message}")
+                        return TriggerResponse(success=False, message="キャリブレーション失敗。")
+
+                except Exception as e:
+                    rospy.logerr(f"capture_tag_pose の呼び出し失敗: {e}")
+                    return TriggerResponse(success=False, message="capture_tag_pose 呼び出しに失敗。")
+                
+                # --- IMU/ICP reference reset ---
+                try:
+                    reset_res = self.reset_reference_client()
+                    rospy.loginfo(f"IMU/ICP reference reset: {reset_res.message}")
+                except Exception as e:
+                    rospy.logerr(f"IMU/ICP reference reset失敗: {e}")
+
                 rospy.loginfo("ホーム姿勢へ復帰中...")
                 self.arm.stop()
                 self.arm.clear_pose_targets()
@@ -258,23 +240,27 @@ class RecalibrationServer:
 
                 rospy.loginfo("=== 再キャリブレーション完了 ===")
 
-                # -----------------------------------------------------
-                # IMU/ICP Reference をリセット
-                # -----------------------------------------------------
-                try:
-                    reset_res = self.reset_reference_client()
-                    rospy.loginfo(f"IMU/ICP reference reset: {reset_res.message}")
-                except Exception as e:
-                    rospy.logerr(f"IMU/ICP reference reset失敗: {e}")
+                # # --- IMU/ICP reference reset ---
+                # try:
+                #     reset_res = self.reset_reference_client()
+                #     rospy.loginfo(f"IMU/ICP reference reset: {reset_res.message}")
+                # except Exception as e:
+                #     rospy.logerr(f"IMU/ICP reference reset失敗: {e}")
 
-                return TriggerResponse(success=True, message="再キャリブレーション完了。")
+                # --- 計測終了 ---
+                elapsed = (rospy.Time.now() - start_time).to_sec()
+                rospy.loginfo(f"Recalibration time: {elapsed:.3f} sec")
+
+                return TriggerResponse(
+                    success=True,
+                    message=f"再キャリブレーション完了。処理時間: {elapsed:.3f} sec"
+                )
 
         except Exception as e:
             rospy.logerr(f"Recalibration failed: {e}")
             return TriggerResponse(success=False, message=str(e))
 
         finally:
-            # Pick&Place ノードの再開許可
             rospy.set_param(MOTION_LOCK_PARAM, False)
             self.is_processing = False
             rospy.loginfo("Pick&Place ノードの動作再開を許可しました。")

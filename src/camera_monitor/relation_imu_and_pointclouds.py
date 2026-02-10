@@ -9,6 +9,7 @@ import sensor_msgs.point_cloud2 as pc2
 from scipy.spatial.transform import Rotation as R
 from std_msgs.msg import String
 import open3d as o3d
+from visualization_msgs.msg import Marker
 
 
 class SimpleTiltRMSE:
@@ -26,12 +27,18 @@ class SimpleTiltRMSE:
         self.g_ref = None                       # IMU基準重力方向
 
         self.pub_rot = rospy.Publisher("/tilt/rotated", PointCloud2, queue_size=1)
+        self.pub_marker = rospy.Publisher("/roi_marker", Marker, queue_size=1)
+
+        # ROI
+        self.x_min, self.x_max = -0.1, 0.1
+        self.y_min, self.y_max = -0.1, 0.1
+        self.z_min, self.z_max = 0, 1.00
 
         rospy.Subscriber(self.pc_topic, PointCloud2, self.pc_callback)
         rospy.Subscriber("key_input", String, self.key_callback)
 
         if self.mode == "icp":
-            rospy.Subscriber("/camera/imu", Imu, self.imu_callback)
+            rospy.Subscriber("/cam_2/imu", Imu, self.imu_callback)
             rospy.loginfo("IMU subscriber enabled (/camera/imu)")
 
         rospy.loginfo("SimpleTiltRMSE started. mode=%s", self.mode)
@@ -106,15 +113,58 @@ class SimpleTiltRMSE:
             rospy.loginfo_throttle(2.0, "[ICP] Waiting for IMU (g_ref not set)...")
             return
 
+        pts = np.asarray(points)
+
+        # ROI
+        mask = (pts[:,2] > self.z_min) & (pts[:,2] < self.z_max) & \
+               (pts[:,0] > self.x_min) & (pts[:,0] < self.x_max) & \
+               (pts[:,1] > self.y_min) & (pts[:,1] < self.y_max)
+
+        pts_roi = pts[mask]
+        if len(pts_roi) < 50:
+            rospy.logwarn_throttle(2.0, "[ICP] ROI too small. points=%d", len(pts_roi))
+            return
+
+        # ROI Marker
+        cx = (self.x_min + self.x_max) / 2.0
+        cy = (self.y_min + self.y_max) / 2.0
+        cz = (self.z_min + self.z_max) / 2.0
+        sx = (self.x_max - self.x_min)
+        sy = (self.y_max - self.y_min)
+        sz = (self.z_max - self.z_min)
+
+        marker = Marker()
+        marker.header.frame_id = msg.header.frame_id
+        marker.header.stamp = rospy.Time.now()
+        marker.ns = "roi"
+        marker.id = 0
+        marker.type = Marker.CUBE
+        marker.action = Marker.ADD
+        marker.pose.position.x = cx
+        marker.pose.position.y = cy
+        marker.pose.position.z = cz
+        marker.scale.x = sx
+        marker.scale.y = sy
+        marker.scale.z = sz
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 0.25
+        self.pub_marker.publish(marker)
+
+        # ref 点群
         if self.ref_points is None:
             pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(points)
+            pcd.points = o3d.utility.Vector3dVector(pts_roi)
+            # pcd.points = o3d.utility.Vector3dVector(points)
             self.ref_points = pcd.voxel_down_sample(0.02)
-            rospy.loginfo("[ICP] Saved reference cloud. N=%d", len(self.ref_points.points))
+            rospy.loginfo("[ICP] Saved reference cloud (ROI). N=%d", len(self.ref_points.points))
+            # rospy.loginfo("[ICP] Saved reference cloud. N=%d", len(self.ref_points.points))
             return
 
         pcd_cur = o3d.geometry.PointCloud()
-        pcd_cur.points = o3d.utility.Vector3dVector(points)
+        pcd_cur.points = o3d.utility.Vector3dVector(pts_roi)
+        # pcd_cur.points = o3d.utility.Vector3dVector(points)
         cur_ds = pcd_cur.voxel_down_sample(0.02)
 
         if len(cur_ds.points) == 0:
@@ -181,12 +231,14 @@ class SimpleTiltRMSE:
         self.ax1.cla()
         self.ax2.cla()
 
-        self.ax1.plot(self.tilt_hist, label='IMU / tilt (deg)')
-        self.ax1.set_ylabel("Tilt / IMU diff [deg]")
+        self.ax1.plot(self.tilt_hist, label='IMU drift (deg)')
+        self.ax1.set_ylabel("IMU drift  [deg]")
+        self.ax1.set_xlabel("Frame_index")
         self.ax1.legend()
 
-        self.ax2.plot(self.mean_hist, label='Mean distance (m)')
-        self.ax2.set_ylabel("Mean distance [m]")
+        self.ax2.plot(self.mean_hist, label='Mean displacement(m)')
+        self.ax2.set_xlabel("Frame_index")
+        self.ax2.set_ylabel("Mean displacement [m]")
         self.ax2.legend()
 
         self.fig.canvas.draw()

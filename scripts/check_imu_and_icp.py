@@ -332,14 +332,40 @@ class ImuIcpMonitor:
     # cv2.imshow はメインスレッドでの実行が安定だが、ここでは短間隔のループで更新
     # ---------------------------------------------------------------------
     def _depth_display_loop(self):
-        cv2.namedWindow("Depth", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("Depth", 960, 720)
+        win_name = "Depth"
+        cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(win_name, 960, 720)
+
+        # 画面幅取得
+        try:
+            import tkinter as tk
+            root = tk.Tk()
+            root.withdraw()
+            screen_w = root.winfo_screenwidth()
+            root.destroy()
+        except Exception:
+            screen_w = 1920
+
+        target_x = screen_w - 960
+        target_y = 0
+
+        move_counter = 0          # ★ 最初の数フレームだけ強制移動
+        MOVE_TRIES = 20           # ★ これが重要（10〜30推奨）
+
         while not rospy.is_shutdown():
             if self.latest_depth_vis is not None:
-                cv2.imshow("Depth", self.latest_depth_vis)
+                cv2.imshow(win_name, self.latest_depth_vis)
                 cv2.waitKey(1)
+
+                # ★ ウィンドウマネージャに勝つための強制再配置
+                if move_counter < MOVE_TRIES:
+                    cv2.moveWindow(win_name, target_x, target_y)
+                    move_counter += 1
+
             time.sleep(0.05)
-        cv2.destroyAllWindows()
+
+        cv2.destroyWindow(win_name)
+
 
     # ---------------------------------------------------------------------
     # 再キャリブレーション開始（非同期でサービス呼び出し）

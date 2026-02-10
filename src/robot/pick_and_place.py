@@ -74,7 +74,7 @@ class PickAndPlace:
         self.arm = moveit_commander.MoveGroupCommander("xarm6", ns="")
         self.arm.set_max_velocity_scaling_factor(rospy.get_param("~vel_scale", 0.1))
         self.arm.set_max_acceleration_scaling_factor(rospy.get_param("~acc_scale", 0.1))
-        self.arm.set_planning_time(rospy.get_param("~planning_time", 5.0))
+        self.arm.set_planning_time(rospy.get_param("~planning_time", 10.0))
 
         rospy.sleep(0.5)
         self.home_pose = self.arm.get_current_pose().pose  # 現在の姿勢を保存（使っていないが保持は妥当）
@@ -103,7 +103,7 @@ class PickAndPlace:
         # 実行シーケンス
         # ------------------------------------------------------------
         self.pose_sequence = rospy.get_param("~sequence", ["target1", "target2"])
-        self.wait_time_per_pose = rospy.get_param("~wait_time_per_action", 5.0)
+        self.wait_time_per_pose = rospy.get_param("~wait_time_per_action", 3.0)
 
         # ------------------------------------------------------------
         # Pick & Place 動作スレッド開始
